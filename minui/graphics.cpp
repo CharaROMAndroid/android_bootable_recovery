@@ -32,6 +32,7 @@
 
 static GRFont* gr_font = nullptr;
 static GRFont* gr_font_menu = nullptr;
+static GRFont* gr_font_header = nullptr;
 static MinuiBackend* gr_backend = nullptr;
 
 static int overscan_offset_x = 0;
@@ -60,6 +61,10 @@ const GRFont* gr_sys_font() {
 
 const GRFont* gr_menu_font() {
   return gr_font_menu;
+}
+
+const GRFont* gr_header_font() {
+  return gr_font_header;
 }
 
 PixelFormat gr_pixel_format() {
@@ -441,6 +446,11 @@ int gr_init(std::initializer_list<GraphicsBackend> backends) {
   if (ret != 0) {
     printf("Failed to init menu font: %d. Falling back to system font\n", ret);
     gr_font_menu = gr_font;
+  }
+  ret = gr_init_font("font_header", &gr_font_header);
+  if (ret != 0) {
+    printf("Failed to init header font: %d. Falling back to menu font\n", ret);
+    gr_font_header = gr_font_menu;
   }
 
   std::unique_ptr<MinuiBackend> minui_backend;
