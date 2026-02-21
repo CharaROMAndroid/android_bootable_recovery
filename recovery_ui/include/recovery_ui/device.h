@@ -73,10 +73,13 @@ class Device {
     SHUTDOWN_FROM_FASTBOOT = 21,
     WIPE_SYSTEM = 100,
     ENABLE_ADB = 101,
-    SWAP_SLOT = 102,
+    UI_THEME_LIGHT = 102,
+    UI_THEME_DARK = 103,
     MENU_BASE = 200,
     MENU_WIPE = 202,
     MENU_ADVANCED = 203,
+    MENU_UI = 204,
+    MENU_REBOOT = 205,
   };
 
   explicit Device(RecoveryUI* ui);

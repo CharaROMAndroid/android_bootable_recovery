@@ -31,17 +31,16 @@ typedef std::pair<std::string, Device::BuiltinAction> menu_action_t;
 
 static std::vector<std::string> g_main_header{};
 static std::vector<menu_action_t> g_main_actions{
-  { "Reboot system now", Device::REBOOT },
   { "Apply update", Device::APPLY_UPDATE },
   { "Factory reset", Device::MENU_WIPE },
   { "Advanced", Device::MENU_ADVANCED },
+  { "UI", Device::MENU_UI },
+  { "Reboot...", Device::MENU_REBOOT },
+  { "Power off", Device::SHUTDOWN },
 };
 
 static std::vector<std::string> g_advanced_header{ "Advanced options" };
 static std::vector<menu_action_t> g_advanced_actions{
-  { "Enter fastboot", Device::ENTER_FASTBOOT },
-  { "Reboot to bootloader", Device::REBOOT_BOOTLOADER },
-  { "Reboot to recovery", Device::REBOOT_RECOVERY },
   { "Mount/unmount system", Device::MOUNT_SYSTEM },
   { "View recovery logs", Device::VIEW_RECOVERY_LOGS },
   { "Enable ADB", Device::ENABLE_ADB },
@@ -49,7 +48,20 @@ static std::vector<menu_action_t> g_advanced_actions{
   { "Run graphics test", Device::RUN_GRAPHICS_TEST },
   { "Run locale test", Device::RUN_LOCALE_TEST },
   { "Enter rescue", Device::ENTER_RESCUE },
-  { "Power off", Device::SHUTDOWN },
+};
+
+static std::vector<std::string> g_ui_header{ "UI options" };
+static std::vector<menu_action_t> g_ui_actions{
+  { "Light (Default)", Device::UI_THEME_LIGHT },
+  { "Dark", Device::UI_THEME_DARK },
+};
+
+static std::vector<std::string> g_reboot_header{ "Reboot options" };
+static std::vector<menu_action_t> g_reboot_actions{
+  { "Reboot to system", Device::REBOOT },
+  { "Reboot to bootloader", Device::REBOOT_BOOTLOADER },
+  { "Reboot to fastbootd", Device::ENTER_FASTBOOT },
+  { "Reboot to recovery", Device::REBOOT_RECOVERY },
 };
 
 static std::vector<std::string> g_wipe_header{ "Factory reset" };
@@ -95,6 +107,8 @@ static void RemoveMenuItemForAction(std::vector<menu_action_t>& menu, Device::Bu
 void Device::RemoveMenuItemForAction(Device::BuiltinAction action) {
   ::RemoveMenuItemForAction(g_wipe_actions, action);
   ::RemoveMenuItemForAction(g_advanced_actions, action);
+  ::RemoveMenuItemForAction(g_ui_actions, action);
+  ::RemoveMenuItemForAction(g_reboot_actions, action);
 }
 
 const std::vector<std::string>& Device::GetMenuItems() {
@@ -106,6 +120,10 @@ const std::vector<std::string>& Device::GetMenuHeaders() {
       return g_wipe_header;
   if (current_menu_ == &g_advanced_actions)
       return g_advanced_header;
+  if (current_menu_ == &g_ui_actions)
+      return g_ui_header;
+  if (current_menu_ == &g_reboot_actions)
+      return g_reboot_header;
   return g_main_header;
 }
 
@@ -119,6 +137,12 @@ Device::BuiltinAction Device::InvokeMenuItem(size_t menu_position) {
         break;
       case Device::BuiltinAction::MENU_ADVANCED:
         current_menu_ = &g_advanced_actions;
+        break;
+      case Device::BuiltinAction::MENU_UI:
+        current_menu_ = &g_ui_actions;
+        break;
+      case Device::BuiltinAction::MENU_REBOOT:
+        current_menu_ = &g_reboot_actions;
         break;
       default:
         break;
