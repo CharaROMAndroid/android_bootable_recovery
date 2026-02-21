@@ -94,6 +94,11 @@ class RecoveryUI {
     DETERMINATE,
   };
 
+  enum class Theme {
+    DARK,
+    LIGHT,
+  };
+
   enum KeyAction {
     ENQUEUE,
     TOGGLE,
@@ -166,6 +171,7 @@ class RecoveryUI {
   // Sets the overall recovery state ("background image").
   virtual void SetBackground(Icon icon) = 0;
   virtual void SetSystemUpdateText(bool security_update) = 0;
+  virtual void SetTheme(Theme /* theme */) {}
 
   // --- progress indicator ---
   virtual void SetProgressType(ProgressType determinate) = 0;

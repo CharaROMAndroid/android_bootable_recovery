@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <thread>
@@ -57,6 +58,186 @@ enum DirectRenderManager {
     DRM_INNER,
     DRM_OUTER,
 };
+
+namespace {
+constexpr uint8_t kLightBgR = 0xed;
+constexpr uint8_t kLightBgG = 0xf7;
+constexpr uint8_t kLightBgB = 0xff;
+constexpr uint8_t kLightTextR = 0x0f;
+constexpr uint8_t kLightTextG = 0x17;
+constexpr uint8_t kLightTextB = 0x2a;
+constexpr uint8_t kLightHighlightR = 0xdc;
+constexpr uint8_t kLightHighlightG = 0x3a;
+constexpr uint8_t kLightHighlightB = 0x4f;
+constexpr uint8_t kHeaderLightR = 0x1d;
+constexpr uint8_t kHeaderLightG = 0x4e;
+constexpr uint8_t kHeaderLightB = 0xd8;
+constexpr uint8_t kHeaderDarkR = 0x60;
+constexpr uint8_t kHeaderDarkG = 0xa5;
+constexpr uint8_t kHeaderDarkB = 0xfa;
+
+void GetRgbIndices(PixelFormat format, int* r, int* g, int* b) {
+  if (format == PixelFormat::RGBA) {
+    *r = 1;
+    *g = 2;
+    *b = 3;
+  } else if (format == PixelFormat::ARGB || format == PixelFormat::ABGR ||
+             format == PixelFormat::BGRA || format == PixelFormat::BGRX) {
+    *r = 2;
+    *g = 1;
+    *b = 0;
+  } else {
+    *r = 0;
+    *g = 1;
+    *b = 2;
+  }
+}
+
+void RecolorSurfaceForLightTheme(GRSurface* surface) {
+  if (surface == nullptr || surface->pixel_bytes != 4) return;
+
+  int r = 0;
+  int g = 1;
+  int b = 2;
+  GetRgbIndices(gr_pixel_format(), &r, &g, &b);
+
+  constexpr uint8_t kDarkThreshold = 8;
+  constexpr uint8_t kOldLightBgR = 0xd0;
+  constexpr uint8_t kOldLightBgG = 0xeb;
+  constexpr uint8_t kOldLightBgB = 0xff;
+  for (size_t y = 0; y < surface->height; ++y) {
+    uint8_t* row = surface->data() + y * surface->row_bytes;
+    for (size_t x = 0; x < surface->width; ++x) {
+      uint8_t* p = row + x * 4;
+      if ((p[r] <= kDarkThreshold && p[g] <= kDarkThreshold && p[b] <= kDarkThreshold) ||
+          (p[r] == kOldLightBgR && p[g] == kOldLightBgG && p[b] == kOldLightBgB)) {
+        p[r] = kLightBgR;
+        p[g] = kLightBgG;
+        p[b] = kLightBgB;
+      }
+    }
+  }
+}
+
+std::unique_ptr<GRSurface> MakeTintedSurface(const std::unique_ptr<GRSurface>& surface,
+                                             uint8_t bg_r, uint8_t bg_g, uint8_t bg_b,
+                                             uint8_t fg_r, uint8_t fg_g, uint8_t fg_b) {
+  if (!surface || surface->pixel_bytes != 4) return nullptr;
+  auto tinted = surface->Clone();
+  if (!tinted) return nullptr;
+
+  int r = 0;
+  int g = 1;
+  int b = 2;
+  GetRgbIndices(gr_pixel_format(), &r, &g, &b);
+
+  constexpr int kLow = 40;
+  constexpr int kHigh = 200;
+  const int denom = std::max(1, kHigh - kLow);
+
+  for (size_t y = 0; y < tinted->height; ++y) {
+    uint8_t* row = tinted->data() + y * tinted->row_bytes;
+    for (size_t x = 0; x < tinted->width; ++x) {
+      uint8_t* p = row + x * 4;
+      int intensity = (static_cast<int>(p[r]) + static_cast<int>(p[g]) +
+                       static_cast<int>(p[b])) /
+                      3;
+      if (intensity <= kLow) {
+        p[r] = bg_r;
+        p[g] = bg_g;
+        p[b] = bg_b;
+        continue;
+      }
+      if (intensity >= kHigh) {
+        p[r] = fg_r;
+        p[g] = fg_g;
+        p[b] = fg_b;
+        continue;
+      }
+      int t = (intensity - kLow);
+      p[r] = static_cast<uint8_t>(bg_r + (fg_r - bg_r) * t / denom);
+      p[g] = static_cast<uint8_t>(bg_g + (fg_g - bg_g) * t / denom);
+      p[b] = static_cast<uint8_t>(bg_b + (fg_b - bg_b) * t / denom);
+    }
+  }
+  return tinted;
+}
+
+std::unique_ptr<GRSurface> MakeLightSurface(const std::unique_ptr<GRSurface>& surface) {
+  if (!surface) return nullptr;
+  auto light = surface->Clone();
+  if (!light) return nullptr;
+  RecolorSurfaceForLightTheme(light.get());
+  return light;
+}
+
+void DrawRoundedRect(const DrawInterface& draw, int left, int top, int right, int bottom,
+                     int radius_top, int radius_bottom) {
+  if (right <= left || bottom <= top) return;
+  int width = right - left;
+  int height = bottom - top;
+  int r_top = std::min(radius_top, std::min(width / 2, height / 2));
+  int r_bottom = std::min(radius_bottom, std::min(width / 2, height / 2));
+  if (r_top <= 0 && r_bottom <= 0) {
+    draw.DrawFill(left, top, right, bottom);
+    return;
+  }
+
+  int top_band = top + r_top;
+  int bottom_band = bottom - r_bottom;
+  if (top_band < bottom_band) {
+    draw.DrawFill(left, top_band, right, bottom_band);
+  }
+
+  if (r_top > 0) {
+    for (int y = 0; y < r_top; ++y) {
+      int dy = r_top - y;
+      int dx = static_cast<int>(std::sqrt(r_top * r_top - dy * dy));
+      int x_off = r_top - dx;
+      draw.DrawFill(left + x_off, top + y, right - x_off, top + y + 1);
+    }
+  }
+
+  if (r_bottom > 0) {
+    for (int y = 0; y < r_bottom; ++y) {
+      int dy = r_bottom - y;
+      int dx = static_cast<int>(std::sqrt(r_bottom * r_bottom - dy * dy));
+      int x_off = r_bottom - dx;
+      draw.DrawFill(left + x_off, bottom - y - 1, right - x_off, bottom - y);
+    }
+  }
+}
+
+std::vector<std::string> WrapTextLines(const std::vector<std::string>& lines, size_t max_cols) {
+  std::vector<std::string> out;
+  if (max_cols == 0) {
+    max_cols = 1;
+  }
+  for (const auto& line : lines) {
+    size_t next_start = 0;
+    while (next_start < line.size()) {
+      std::string sub = line.substr(next_start, max_cols + 1);
+      if (sub.size() <= max_cols) {
+        next_start += sub.size();
+      } else {
+        size_t last_space = sub.find_last_of(" \t\n");
+        if (last_space == std::string::npos) {
+          sub.resize(max_cols);
+          next_start += max_cols;
+        } else {
+          sub.resize(last_space);
+          next_start += last_space + 1;
+        }
+      }
+      out.emplace_back(std::move(sub));
+    }
+    if (line.empty()) {
+      out.emplace_back();
+    }
+  }
+  return out;
+}
+}  // namespace
 
 // Return the current time as a double (including fractions of a second).
 static double now() {
@@ -184,35 +365,57 @@ int TextMenu::DrawHeader(int x, int y) const {
 }
 
 int TextMenu::DrawItems(int x, int y, int screen_width, bool long_press) const {
-  int horizontal_rule_height = 8;
   int offset = 0;
   int padding = draw_funcs_.MenuItemPadding();
+  int base_height = char_height_ + 2 * padding + padding / 2;
+  int spacing = std::max(1, padding / 5);
+  int item_height = base_height + spacing;
+  int inset_y = std::max(1, padding / 10);
+  constexpr int kMenuIndent = 24;  // Match ScreenRecoveryUI::kMenuIndent.
+  int text_inset = std::max(6, draw_funcs_.MenuCharWidth() + draw_funcs_.MenuCharWidth() / 2);
+  int base_margin = std::max(0, x - kMenuIndent) + (kMenuIndent * 2);
+  int side_margin = std::max(base_margin, text_inset);
+  int button_left = side_margin;
+  int button_right = screen_width - side_margin;
+  int text_x = button_left + side_margin;
+  int menu_char_height = draw_funcs_.MenuCharHeight();
+  int gap = spacing / 2;
+  int radius_large = std::max(6, (item_height - 2 * inset_y) / 3);
+  int radius_small = std::max(2, (item_height - 2 * inset_y) / 8);
+  radius_large = std::min(radius_large, (item_height - 2 * inset_y) / 2);
+  radius_small = std::min(radius_small, radius_large);
 
   draw_funcs_.SetColor(UIElement::MENU);
-  offset += draw_funcs_.DrawHorizontalRule(y + offset) + 4;
 
   int item_container_offset = offset; // store it for drawing scrollbar on most top
 
   for (size_t i = MenuStart(); i < MenuEnd(); ++i) {
-    if (i == selection()) {
-      // Draw the highlight bar.
+    bool is_selected = (i == selection());
+    if (is_selected) {
       draw_funcs_.SetColor(long_press ? UIElement::MENU_SEL_BG_ACTIVE : UIElement::MENU_SEL_BG);
+    } else {
+      draw_funcs_.SetColor(UIElement::MENU_BG);
+    }
 
-      int bar_height = padding + char_height_ + padding;
-      draw_funcs_.DrawHighlightBar(0, y + offset, screen_width, bar_height);
+    int radius_top = (i == MenuStart()) ? radius_large : radius_small;
+    int radius_bottom = (i + 1 == MenuEnd()) ? radius_large : radius_small;
+    DrawRoundedRect(draw_funcs_, button_left, y + offset + gap + inset_y, button_right,
+                    y + offset + gap + base_height - inset_y, radius_top, radius_bottom);
 
-    int bar_height = padding + char_height_ + padding;
-    draw_funcs_.DrawHighlightBar(padding + x, y + offset, screen_width - (padding + x) * 2, bar_height);
-
-    draw_funcs_.SetColor(selected ? UIElement::MENU_SEL_FG : UIElement::MENU);
-    offset += draw_funcs_.DrawTextLine(padding * 2 + x, y + offset, TextItem(i), false /* bold */);
-    offset += spacing;
+    if (i == selection()) {
+      // Colored text for the selected item.
+      draw_funcs_.SetColor(UIElement::MENU_SEL_FG);
+    } else {
+      draw_funcs_.SetColor(UIElement::MENU);
+    }
+    int text_y = y + offset + gap + (base_height - menu_char_height) / 2;
+    gr_text(gr_menu_font(), text_x, text_y, TextItem(i).c_str(), false /* bold */);
+    offset += item_height;
   }
-  offset += draw_funcs_.DrawHorizontalRule(y + offset);
 
   std::string unused;
   if (ItemsOverflow(&unused)) {
-    int container_height = max_display_items_ * (2 * padding + char_height_);
+    int container_height = max_display_items_ * item_height;
     int bar_height = container_height / (text_items_.size() - max_display_items_ + 1);
     int start_y = y + item_container_offset + bar_height * menu_start_;
     draw_funcs_.SetColor(UIElement::SCROLLBAR);
@@ -505,7 +708,11 @@ int ScreenRecoveryUI::GetProgressBaseline() const {
 // Should only be called with updateMutex locked.
 void ScreenRecoveryUI::draw_background_locked() {
   pagesIdentical = false;
-  gr_color(0, 0, 0, 255);
+  if (theme_ == Theme::LIGHT) {
+    gr_color(kLightBgR, kLightBgG, kLightBgB, 255);
+  } else {
+    gr_color(0, 0, 0, 255);
+  }
   gr_clear();
   if (current_icon_ != NONE) {
     if (max_stage != -1) {
@@ -523,7 +730,11 @@ void ScreenRecoveryUI::draw_background_locked() {
     const auto& text_surface = GetCurrentText();
     int text_x = (ScreenWidth() - gr_get_width(text_surface)) / 2;
     int text_y = GetTextBaseline();
-    gr_color(255, 255, 255, 255);
+    if (theme_ == Theme::LIGHT) {
+      gr_color(0, 0, 0, 255);
+    } else {
+      gr_color(255, 255, 255, 255);
+    }
     DrawTextIcon(text_x, text_y, text_surface);
   }
 }
@@ -550,7 +761,11 @@ void ScreenRecoveryUI::draw_foreground_locked() {
     int progress_y = GetProgressBaseline();
 
     // Erase behind the progress bar (in case this was a progress-only update)
-    gr_color(0, 0, 0, 255);
+    if (theme_ == Theme::LIGHT) {
+      gr_color(kLightBgR, kLightBgG, kLightBgB, 255);
+    } else {
+      gr_color(0, 0, 0, 255);
+    }
     DrawFill(progress_x, progress_y, width, height);
 
     if (progressBarType == DETERMINATE) {
@@ -585,6 +800,42 @@ void ScreenRecoveryUI::draw_foreground_locked() {
    fastbootd dark: #E65100
    fastboot light: #FDD835 */
 void ScreenRecoveryUI::SetColor(UIElement e) const {
+  if (theme_ == Theme::LIGHT) {
+    switch (e) {
+      case UIElement::BATTERY_LOW:
+        gr_color(0xfd, 0x35, 0x35, 255);
+        break;
+      case UIElement::INFO:
+      case UIElement::MENU:
+      case UIElement::LOG:
+        gr_color(kLightTextR, kLightTextG, kLightTextB, 255);
+        break;
+      case UIElement::HEADER:
+        gr_color(kHeaderLightR, kHeaderLightG, kHeaderLightB, 255);
+        break;
+      case UIElement::MENU_BG:
+        gr_color(0xff, 0xff, 0xff, 230);
+        break;
+      case UIElement::MENU_SEL_BG:
+      case UIElement::SCROLLBAR:
+        gr_color(kLightHighlightR, kLightHighlightG, kLightHighlightB, 255);
+        break;
+      case UIElement::MENU_SEL_BG_ACTIVE:
+        gr_color(kLightHighlightR, kLightHighlightG, kLightHighlightB, 255);
+        break;
+      case UIElement::MENU_SEL_FG:
+        gr_color(kLightTextR, kLightTextG, kLightTextB, 255);
+        break;
+      case UIElement::TEXT_FILL:
+        gr_color(255, 255, 255, 160);
+        break;
+      default:
+        gr_color(kLightTextR, kLightTextG, kLightTextB, 255);
+        break;
+    }
+    return;
+  }
+
   switch (e) {
     case UIElement::BATTERY_LOW:
       if (fastbootd_logo_enabled_)
@@ -596,17 +847,23 @@ void ScreenRecoveryUI::SetColor(UIElement e) const {
       gr_color(255, 255, 255, 255);
       break;
     case UIElement::HEADER:
-      gr_color(177, 18, 38, 255);
+      gr_color(kHeaderDarkR, kHeaderDarkG, kHeaderDarkB, 255);
       break;
-    case UIElement::MENU:
-      gr_color(0xd8, 0xd8, 0xd8, 255);
-      break;
+      case UIElement::MENU:
+        gr_color(0xd8, 0xd8, 0xd8, 255);
+        break;
+      case UIElement::MENU_BG:
+        gr_color(0x20, 0x20, 0x20, 220);
+        break;
     case UIElement::MENU_SEL_BG:
     case UIElement::SCROLLBAR:
       gr_color(177, 18, 38, 255);
       break;
     case UIElement::MENU_SEL_BG_ACTIVE:
-      gr_color(177, 18, 38, 255);
+      if (fastbootd_logo_enabled_)
+        gr_color(0xe6, 0x51, 0x00, 255);
+      else
+        gr_color(0x7c, 0x4d, 0xff, 255);
       break;
     case UIElement::MENU_SEL_FG:
       gr_color(0xd8, 0xd8, 0xd8, 255);
@@ -639,7 +896,11 @@ void ScreenRecoveryUI::SelectAndShowBackgroundText(const std::vector<std::string
   }
 
   std::lock_guard<std::mutex> lg(updateMutex);
-  gr_color(0, 0, 0, 255);
+  if (theme_ == Theme::LIGHT) {
+    gr_color(kLightBgR, kLightBgG, kLightBgB, 255);
+  } else {
+    gr_color(0, 0, 0, 255);
+  }
   gr_clear();
 
   int text_y = margin_height_;
@@ -664,7 +925,11 @@ void ScreenRecoveryUI::SelectAndShowBackgroundText(const std::vector<std::string
     text_y += line_spacing;
     SetColor(UIElement::LOG);
     text_y += DrawTextLine(text_x, text_y, p.first, false);
-    gr_color(255, 255, 255, 255);
+    if (theme_ == Theme::LIGHT) {
+      gr_color(0, 0, 0, 255);
+    } else {
+      gr_color(255, 255, 255, 255);
+    }
     gr_texticon(text_x, text_y, p.second.get());
     text_y += gr_get_height(p.second.get());
   }
@@ -748,10 +1013,62 @@ int ScreenRecoveryUI::DrawTextLine(int x, int y, const std::string& line, bool b
   return char_height_ + 4;
 }
 
+int ScreenRecoveryUI::DrawInfoTextLine(int x, int y, const std::string& line, bool bold) const {
+  const GRFont* font = gr_sys_font();
+  GRFont info_font{};
+  int line_height = char_height_;
+  if (info_font_surface_) {
+    info_font.texture = info_font_surface_.get();
+    info_font.char_width = info_char_width_;
+    info_font.char_height = info_char_height_;
+    font = &info_font;
+    line_height = info_char_height_;
+  }
+  gr_text(font, x, y, line.c_str(), bold);
+  return line_height + 4;
+}
+
 int ScreenRecoveryUI::DrawTextLines(int x, int y, const std::vector<std::string>& lines) const {
   int offset = 0;
   for (const auto& line : lines) {
     offset += DrawTextLine(x, y + offset, line, false);
+  }
+  return offset;
+}
+
+int ScreenRecoveryUI::DrawInfoTextLineTight(int x, int y, const std::string& line, bool bold) const {
+  const GRFont* font = gr_sys_font();
+  GRFont info_font{};
+  int line_height = char_height_;
+  if (info_font_surface_) {
+    info_font.texture = info_font_surface_.get();
+    info_font.char_width = info_char_width_;
+    info_font.char_height = info_char_height_;
+    font = &info_font;
+    line_height = info_char_height_;
+  }
+  if (font == nullptr || font->char_width <= 0) {
+    return DrawInfoTextLine(x, y, line, bold);
+  }
+  int advance = font->char_width;
+  int tighten = std::max(1, font->char_width / 8);
+  if (advance > tighten) {
+    advance -= tighten;
+  }
+  int cur_x = x;
+  for (unsigned char ch : line) {
+    char s[2] = { static_cast<char>(ch), 0 };
+    gr_text(font, cur_x, y, s, bold);
+    cur_x += advance;
+  }
+  return line_height + 4;
+}
+
+int ScreenRecoveryUI::DrawInfoTextLinesTight(int x, int y,
+                                             const std::vector<std::string>& lines) const {
+  int offset = 0;
+  for (const auto& line : lines) {
+    offset += DrawInfoTextLineTight(x, y + offset, line, false);
   }
   return offset;
 }
@@ -813,7 +1130,11 @@ void ScreenRecoveryUI::draw_screen_locked() {
     return;
   }
 
-  gr_color(0, 0, 0, 255);
+  if (theme_ == Theme::LIGHT) {
+    gr_color(kLightBgR, kLightBgG, kLightBgB, 255);
+  } else {
+    gr_color(0, 0, 0, 255);
+  }
   gr_clear();
 
   draw_menu_and_text_buffer_locked(GetMenuHelpMessage());
@@ -826,29 +1147,126 @@ void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
   int y = margin_height_;
 
   if (menu_) {
-    auto& logo = fastbootd_logo_enabled_ ? fastbootd_logo_ : lineage_logo_;
-    auto logo_width = gr_get_width(logo.get());
-    auto logo_height = gr_get_height(logo.get());
-    auto centered_x = ScreenWidth() / 2 - logo_width / 2;
-    DrawSurface(logo.get(), 0, 0, logo_width, logo_height, centered_x, y);
-    y += logo_height;
-
-    if (!menu_->IsMain()) {
-      auto icon_w = gr_get_width(back_icon_.get());
-      auto icon_h = gr_get_height(back_icon_.get());
-      auto icon_x = (centered_x - margin_width_) / 2 - icon_w / 2 + margin_width_;
-      auto icon_y = y - logo_height / 2 - icon_h / 2;
-      gr_blit(back_icon_sel_ && menu_->selection() == -1 ? back_icon_sel_.get() : back_icon_.get(),
-              0, 0, icon_w, icon_h, icon_x, icon_y);
+    GRSurface* logo = nullptr;
+    if (fastbootd_logo_enabled_) {
+      logo = (theme_ == Theme::LIGHT && fastbootd_logo_light_) ? fastbootd_logo_light_.get()
+                                                               : fastbootd_logo_.get();
+    } else {
+      logo = (theme_ == Theme::LIGHT && chara_logo_light_) ? chara_logo_light_.get()
+                                                             : chara_logo_.get();
     }
+    auto logo_width = gr_get_width(logo);
+    auto logo_height = gr_get_height(logo);
+    auto centered_x = ScreenWidth() / 2 - logo_width / 2;
+    DrawSurface(logo, 0, 0, logo_width, logo_height, centered_x, y);
+    y += logo_height;
 
     int x = margin_width_ + kMenuIndent;
     if (!title_lines_.empty()) {
       SetColor(UIElement::INFO);
-      y += DrawTextLines(x, y, title_lines_);
+      y += DrawInfoTextLinesTight(x, y, title_lines_);
+      y += std::max(4, MenuItemPadding() / 2);
     }
-    y += menu_->DrawHeader(x, y);
-    menu_start_y_ = y + 12; // Skip horizontal rule and some margin
+    back_button_rect_valid_ = false;
+    int header_offset = 0;
+    const auto* text_headers = menu_->TextHeaders();
+    if (text_headers != nullptr && !text_headers->empty()) {
+      const int menu_char_width = MenuCharWidth();
+      const int text_inset = std::max(6, menu_char_width + menu_char_width / 2);
+      const int base_margin = std::max(0, x - kMenuIndent) + (kMenuIndent * 2);
+      const int side_margin = std::max(base_margin, text_inset);
+      const int button_left = side_margin;
+      const int button_right = ScreenWidth() - side_margin;
+      int header_text_x = button_left + side_margin;
+
+      GRSurface* back_icon = nullptr;
+      GRSurface* back_icon_sel = nullptr;
+      if (theme_ == Theme::LIGHT && back_icon_light_) {
+        back_icon = back_icon_light_.get();
+        back_icon_sel = back_icon_sel_light_ ? back_icon_sel_light_.get() : back_icon;
+      } else {
+        back_icon = back_icon_.get();
+        back_icon_sel = back_icon_sel_.get();
+      }
+      const int icon_w = gr_get_width(back_icon);
+      const int icon_h = gr_get_height(back_icon);
+      int icon_bg = std::max(icon_w, icon_h);
+      const int header_char_width = header_char_width_ > 0 ? header_char_width_ : menu_char_width;
+      const int header_char_height =
+          header_char_height_ > 0 ? header_char_height_ : menu_char_height_;
+      const int min_gap = std::max(MenuItemPadding(), header_char_width / 2);
+      const int min_icon_bg = std::max(icon_w, icon_h);
+      if (side_margin > min_gap + min_icon_bg) {
+        icon_bg = std::min(icon_bg, side_margin - min_gap);
+      }
+      header_text_x = std::max(header_text_x, button_left + icon_bg + min_gap);
+
+      const int header_max_width = std::max(0, button_right - header_text_x);
+      const size_t header_cols =
+          header_char_width > 0 ? static_cast<size_t>(std::max(1, header_max_width / header_char_width))
+                                : 1;
+      const auto header_lines = WrapTextLines(*text_headers, header_cols);
+      const int line_spacing = std::max(2, header_char_height / 3);
+      const int line_height = header_char_height + line_spacing;
+      const int text_height = header_lines.empty()
+                                  ? 0
+                                  : line_height * static_cast<int>(header_lines.size()) -
+                                        line_spacing;
+
+      int header_height = text_height;
+      if (!menu_->IsMain()) {
+        header_height = std::max(header_height, icon_bg);
+      }
+
+      const int header_top = y;
+      const int text_y = header_top + (header_height - text_height) / 2;
+      const int icon_bg_y = header_top + (header_height - icon_bg) / 2;
+
+      if (!menu_->IsMain()) {
+        const int icon_x = button_left + (icon_bg - icon_w) / 2;
+        const int icon_y = icon_bg_y + (icon_bg - icon_h) / 2;
+        gr_blit(back_icon_sel && menu_->selection() == -1 ? back_icon_sel : back_icon, 0, 0, icon_w,
+                icon_h, icon_x, icon_y);
+        back_button_rect_ = { button_left, icon_bg_y, button_left + icon_bg,
+                              icon_bg_y + icon_bg };
+        back_button_rect_valid_ = true;
+      }
+
+      SetColor(UIElement::HEADER);
+      for (size_t i = 0; i < header_lines.size(); ++i) {
+        gr_text(gr_header_font(), header_text_x, text_y + static_cast<int>(i) * line_height,
+                header_lines[i].c_str(), false);
+      }
+
+      const int header_bottom_spacing = std::max(MenuItemPadding(), (MenuItemPadding() * 3) / 4);
+      header_offset = header_height + header_bottom_spacing;
+    } else {
+      if (!menu_->IsMain()) {
+        GRSurface* back_icon = nullptr;
+        GRSurface* back_icon_sel = nullptr;
+        if (theme_ == Theme::LIGHT && back_icon_light_) {
+          back_icon = back_icon_light_.get();
+          back_icon_sel = back_icon_sel_light_ ? back_icon_sel_light_.get() : back_icon;
+        } else {
+          back_icon = back_icon_.get();
+          back_icon_sel = back_icon_sel_.get();
+        }
+        const int icon_w = gr_get_width(back_icon);
+        const int icon_h = gr_get_height(back_icon);
+        const int icon_x = centered_x / 2 - icon_w / 2;
+        const int icon_y = y - logo_height / 2 - icon_h / 2;
+        gr_blit(back_icon_sel && menu_->selection() == -1 ? back_icon_sel : back_icon, 0, 0, icon_w,
+                icon_h, icon_x, icon_y);
+        back_button_rect_ = { icon_x, icon_y, icon_x + icon_w, icon_y + icon_h };
+        back_button_rect_valid_ = true;
+      }
+      header_offset = menu_->DrawHeader(x, y);
+      if (header_offset > 0) {
+        header_offset += std::max(MenuItemPadding(), (MenuItemPadding() * 3) / 4);
+      }
+    }
+    y += header_offset;
+    menu_start_y_ = y;
     menu_->SetMenuHeight(std::max(0, ScreenHeight() - menu_start_y_));
     y += menu_->DrawItems(x, y, ScreenWidth(), IsLongPress());
     if (!help_message.empty()) {
@@ -874,8 +1292,15 @@ void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
 // Draws the battery capacity on the screen. Should only be called with updateMutex locked.
 void ScreenRecoveryUI::draw_battery_capacity_locked() {
   int x;
-  int y = margin_height_ + gr_get_height(lineage_logo_.get());
+  int y = margin_height_ + gr_get_height(chara_logo_.get());
   int icon_x, icon_y, icon_h, icon_w;
+  int info_char_width = info_char_width_ > 0 ? info_char_width_ : char_width_;
+  int info_char_height = info_char_height_ > 0 ? info_char_height_ : char_height_;
+  int info_advance = info_char_width;
+  int info_tighten = std::max(1, info_char_width / 8);
+  if (info_advance > info_tighten) {
+    info_advance -= info_tighten;
+  }
 
   if (is_battery_less) return;
 
@@ -889,41 +1314,45 @@ void ScreenRecoveryUI::draw_battery_capacity_locked() {
 
   if (menu_) {
     // Battery icon
-    x = (ScreenWidth() - margin_width_ * 2 - kMenuIndent) - char_width_;
+    x = (ScreenWidth() - margin_width_ * 2 - kMenuIndent) - info_char_width;
 
     SetColor(UIElement::INFO);
 
     // Top
-    icon_x = x + char_width_ / 3;
+    icon_x = x + info_char_width / 3;
     icon_y = y;
-    icon_w = char_width_ / 3;
-    icon_h = char_height_ / 12;
+    icon_w = info_char_width / 3;
+    icon_h = info_char_height / 12;
     gr_fill(icon_x, icon_y, icon_x + icon_w, icon_y + icon_h);
 
     // Main rect
     icon_x = x;
     icon_y = y + icon_h;
-    icon_w = char_width_;
-    icon_h = char_height_ - (char_height_ / 12);
+    icon_w = info_char_width;
+    icon_h = info_char_height - (info_char_height / 12);
     gr_fill(icon_x, icon_y, icon_x + icon_w, icon_y + icon_h);
 
     // Capacity
     if (batt_capacity_ <= 15) SetColor(UIElement::BATTERY_LOW);
-    icon_x = x + char_width_ / 6;
-    icon_y = y + char_height_ / 12;
-    icon_w = char_width_ - (2 * char_width_ / 6);
-    icon_h = char_height_ - (3 * char_height_ / 12);
+    icon_x = x + info_char_width / 6;
+    icon_y = y + info_char_height / 12;
+    icon_w = info_char_width - (2 * info_char_width / 6);
+    icon_h = info_char_height - (3 * info_char_height / 12);
     int cap_h = icon_h * batt_capacity_ / 100;
     gr_fill(icon_x, icon_y + icon_h - cap_h, icon_x + icon_w, icon_y + icon_h);
-    gr_color(0, 0, 0, 255);
+    if (theme_ == Theme::LIGHT) {
+      gr_color(kLightBgR, kLightBgG, kLightBgB, 255);
+    } else {
+      gr_color(0, 0, 0, 255);
+    }
     gr_fill(icon_x, icon_y, icon_x + icon_w, icon_y + icon_h - cap_h);
 
-    x -= char_width_;  // Separator
+    x -= info_char_width;  // Separator
 
     // Battery text
     SetColor(UIElement::INFO);
-    x -= batt_capacity.size() * char_width_;
-    DrawTextLine(x, icon_y, batt_capacity.c_str(), false);
+    x -= batt_capacity.size() * info_advance;
+    DrawInfoTextLineTight(x, icon_y, batt_capacity.c_str(), false);
   }
 }
 
@@ -1105,6 +1534,28 @@ bool ScreenRecoveryUI::InitTextParams() {
   }
   gr_font_size(gr_sys_font(), &char_width_, &char_height_);
   gr_font_size(gr_menu_font(), &menu_char_width_, &menu_char_height_);
+  if (gr_header_font() == nullptr ||
+      gr_font_size(gr_header_font(), &header_char_width_, &header_char_height_) != 0) {
+    header_char_width_ = menu_char_width_;
+    header_char_height_ = menu_char_height_;
+  }
+  info_char_width_ = char_width_;
+  info_char_height_ = char_height_;
+  info_font_surface_.reset();
+  const bool prefer_large_info_font = (char_width_ >= 18 || char_height_ >= 32);
+  const char* preferred = prefer_large_info_font ? "font_info_18" : "font_info_12";
+  const char* fallback = prefer_large_info_font ? "font_info_12" : "font_info_18";
+  GRSurface* info_surface = nullptr;
+  if (res_create_alpha_surface(preferred, &info_surface) != 0) {
+    if (res_create_alpha_surface(fallback, &info_surface) != 0) {
+      info_surface = nullptr;
+    }
+  }
+  if (info_surface) {
+    info_font_surface_.reset(info_surface);
+    info_char_width_ = info_surface->width / 96;
+    info_char_height_ = info_surface->height / 2;
+  }
   text_rows_ = (ScreenHeight() - margin_height_ * 2) / char_height_;
   text_cols_ = (ScreenWidth() - margin_width_ * 2) / char_width_;
   return true;
@@ -1184,10 +1635,33 @@ bool ScreenRecoveryUI::Init(const std::string& locale) {
   back_icon_sel_ = LoadBitmap("ic_back_sel");
   if (android::base::GetBoolProperty("ro.boot.dynamic_partitions", false) ||
       android::base::GetBoolProperty("ro.fastbootd.available", false)) {
-    lineage_logo_ = LoadBitmap("logo_image_switch");
+    chara_logo_ = LoadBitmap("logo_image_switch");
     fastbootd_logo_ = LoadBitmap("fastbootd");
   } else {
-    lineage_logo_ = LoadBitmap("logo_image");
+    chara_logo_ = LoadBitmap("logo_image");
+  }
+  const char* chara_logo_light_name =
+      (android::base::GetBoolProperty("ro.boot.dynamic_partitions", false) ||
+       android::base::GetBoolProperty("ro.fastbootd.available", false))
+          ? "logo_image_switch_light"
+          : "logo_image_light";
+  chara_logo_light_ = LoadBitmap(chara_logo_light_name);
+  if (!chara_logo_light_) {
+    chara_logo_light_ = MakeLightSurface(chara_logo_);
+  }
+  fastbootd_logo_light_ = LoadBitmap("fastbootd_light");
+  if (!fastbootd_logo_light_) {
+    fastbootd_logo_light_ = MakeLightSurface(fastbootd_logo_);
+  }
+  back_icon_light_ = LoadBitmap("ic_back_light");
+  back_icon_sel_light_ = LoadBitmap("ic_back_sel_light");
+  if (!back_icon_light_) {
+    back_icon_light_ = MakeTintedSurface(back_icon_, kLightBgR, kLightBgG, kLightBgB, 0x00, 0x00,
+                                         0x00);
+  }
+  if (!back_icon_sel_light_) {
+    back_icon_sel_light_ = MakeTintedSurface(back_icon_sel_, kLightHighlightR, kLightHighlightG,
+                                             kLightHighlightB, 0x00, 0x00, 0x00);
   }
 
   // Background text for "installing_update" could be "installing update" or
@@ -1260,6 +1734,12 @@ void ScreenRecoveryUI::SetBackground(Icon icon) {
   std::lock_guard<std::mutex> lg(updateMutex);
 
   current_icon_ = icon;
+  update_screen_locked();
+}
+
+void ScreenRecoveryUI::SetTheme(Theme theme) {
+  std::lock_guard<std::mutex> lg(updateMutex);
+  theme_ = theme;
   update_screen_locked();
 }
 
@@ -1388,10 +1868,26 @@ void ScreenRecoveryUI::ShowFile(FILE* fp) {
           show_prompt = true;
           continue;
         }
-        if (evt.key() == KEY_POWER || evt.key() == KEY_ENTER || evt.key() == KEY_BACKSPACE ||
+        if (evt.key() == KEY_ENTER || evt.key() == KEY_BACKSPACE ||
             evt.key() == KEY_BACK || evt.key() == KEY_HOMEPAGE ||
             evt.key() == KEY_ESC || evt.key() == KEY_LEFTMETA || evt.key() == KEY_RIGHTMETA) {
           return;
+        } else if (evt.key() == KEY_POWER) {
+          off_t page_bytes = static_cast<off_t>(text_rows_ * text_cols_);
+          off_t start = 0;
+          if (sb.st_size > page_bytes) {
+            start = sb.st_size - page_bytes;
+          }
+          off_t prev = 0;
+          if (start > page_bytes) {
+            prev = start - page_bytes;
+          }
+          fseek(fp, start, SEEK_SET);
+          offsets.clear();
+          offsets.push_back(prev);
+          if (start != prev) {
+            offsets.push_back(start);
+          }
         } else if (evt.key() == KEY_UP || evt.key() == KEY_VOLUMEUP || evt.key() == KEY_SCROLLUP ||
                    evt.key() == KEY_PAGEUP) {
           if (offsets.size() <= 1) {
@@ -1521,17 +2017,9 @@ int ScreenRecoveryUI::SelectMenu(const Point& p) {
   std::lock_guard<std::mutex> lg(updateMutex);
   if (menu_) {
     if (!menu_->IsMain()) {
-      // Back arrow hitbox
-      const static int logo_width = gr_get_width(lineage_logo_.get());
-      const static int logo_height = gr_get_height(lineage_logo_.get());
-      const static int icon_w = gr_get_width(back_icon_.get());
-      const static int icon_h = gr_get_height(back_icon_.get());
-      const static int centered_x = ScreenWidth() / 2 - logo_width / 2;
-      const static int icon_x = centered_x / 2 - icon_w / 2;
-      const static int icon_y = margin_height_ + logo_height / 2 - icon_h / 2;
-
-      if (point.x() >= icon_x && point.x() <= icon_x + icon_w &&
-          point.y() >= icon_y && point.y() <= icon_y + icon_h) {
+      if (back_button_rect_valid_ && point.x() >= back_button_rect_.left &&
+          point.x() <= back_button_rect_.right && point.y() >= back_button_rect_.top &&
+          point.y() <= back_button_rect_.bottom) {
         return Device::kGoBack;
       }
     }

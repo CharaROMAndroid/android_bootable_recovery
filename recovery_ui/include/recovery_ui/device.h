@@ -59,6 +59,7 @@ class Device {
     REBOOT_BOOTLOADER = 7,
     SHUTDOWN = 8,
     VIEW_RECOVERY_LOGS = 9,
+    VIEW_DMESG = 105,
     MOUNT_SYSTEM = 10,
     RUN_GRAPHICS_TEST = 11,
     RUN_LOCALE_TEST = 12,
@@ -74,9 +75,14 @@ class Device {
     WIPE_SYSTEM = 100,
     ENABLE_ADB = 101,
     SWAP_SLOT = 102,
+    UI_THEME_LIGHT = 103,
+    UI_THEME_DARK = 104,
     MENU_BASE = 200,
     MENU_WIPE = 202,
     MENU_ADVANCED = 203,
+    MENU_UI = 204,
+    MENU_REBOOT = 205,
+    MENU_LOGS = 206,
   };
 
   explicit Device(RecoveryUI* ui);

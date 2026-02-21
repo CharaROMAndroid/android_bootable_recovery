@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/klog.h>
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -29,6 +30,7 @@
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -77,10 +79,20 @@ static constexpr const char* COMMAND_FILE = "/cache/recovery/command";
 static constexpr const char* LAST_KMSG_FILE = "/cache/recovery/last_kmsg";
 static constexpr const char* LAST_LOG_FILE = "/cache/recovery/last_log";
 static constexpr const char* LOCALE_FILE = "/cache/recovery/last_locale";
+static constexpr const char* DMESG_FILE = "/tmp/dmesg.txt";
 
 static constexpr const char* CACHE_ROOT = "/cache";
 
 static bool save_current_log = false;
+static constexpr size_t kMaxKernelLogBytes = 512 * 1024;
+static constexpr size_t kMaxKlogReadBytes = 2 * 1024 * 1024;
+
+#ifndef KLOG_ACTION_READ_ALL
+#define KLOG_ACTION_READ_ALL 3
+#endif
+#ifndef KLOG_ACTION_SIZE_BUFFER
+#define KLOG_ACTION_SIZE_BUFFER 10
+#endif
 
 /*
  * The recovery tool communicates with the main system through /cache files.
@@ -234,16 +246,19 @@ int set_slot(Device* device) {
   } else {
       auto result = module->setActiveBootSlot(sslot, cb);
     if (result.isOk() && ret.success) {
-      if (slot == "A" || slot == "B") device->GetUI()->Print("Switched slot to %s.\n", slot.c_str());
+      device->GetUI()->Print("Switched slot to %s.\n", slot.c_str());
       device->GoHome();
     } else {
-      if (slot == "A" || slot == "B") device->GetUI()->Print("Error changing bootloader boot slot to %s", slot.c_str());
+      device->GetUI()->Print("Error changing bootloader boot slot to %s", slot.c_str());
     }
   }
   return ret.success ? 0 : 1;
 }
 
 bool ask_to_continue_spl_downgrade(Device* device) {
+  if (get_build_type() == "user") {
+    return false;
+  }
   device->GetUI()->SetProgressType(RecoveryUI::EMPTY);
   return yes_no(device,
     "WARNING: Security patch level downgrade detected. "
@@ -385,6 +400,36 @@ static InstallResult prompt_and_wipe_data(Device* device) {
       }
     }
   }
+}
+
+static std::string ReadDmesg() {
+  int size = klogctl(KLOG_ACTION_SIZE_BUFFER, nullptr, 0);
+  if (size <= 0) {
+    return android::base::StringPrintf("Failed to get dmesg size: %s\n", strerror(errno));
+  }
+  if (static_cast<size_t>(size) > kMaxKlogReadBytes) {
+    size = static_cast<int>(kMaxKlogReadBytes);
+  }
+
+  std::string buffer;
+  buffer.resize(size);
+  int read_size = klogctl(KLOG_ACTION_READ_ALL, buffer.data(), size);
+  if (read_size < 0) {
+    return android::base::StringPrintf("Failed to read dmesg: %s\n", strerror(errno));
+  }
+  buffer.resize(read_size);
+  if (buffer.size() > kMaxKernelLogBytes) {
+    buffer.erase(0, buffer.size() - kMaxKernelLogBytes);
+  }
+  return buffer;
+}
+
+static void ShowKernelLog(Device* device, const std::string& path, const std::string& content) {
+  if (!android::base::WriteStringToFile(content, path)) {
+    device->GetUI()->Print("Failed to write %s: %s\n", path.c_str(), strerror(errno));
+    return;
+  }
+  device->GetUI()->ShowFile(path);
 }
 
 static void choose_recovery_file(Device* device) {
@@ -582,6 +627,9 @@ change_menu:
       case Device::MENU_BASE:
       case Device::MENU_WIPE:
       case Device::MENU_ADVANCED:
+      case Device::MENU_UI:
+      case Device::MENU_LOGS:
+      case Device::MENU_REBOOT:
         goto change_menu;
 
       case Device::REBOOT_FROM_FASTBOOT:    // Can not happen
@@ -690,6 +738,12 @@ change_menu:
         choose_recovery_file(device);
         break;
 
+      case Device::VIEW_DMESG: {
+        std::string content = ReadDmesg();
+        ShowKernelLog(device, DMESG_FILE, content);
+        break;
+      }
+
       case Device::ENABLE_ADB:
         android::base::SetProperty("ro.adb.secure.recovery", "0");
         android::base::SetProperty("ctl.restart", "adbd");
@@ -711,6 +765,14 @@ change_menu:
         screen_ui->CheckBackgroundTextImages();
         break;
       }
+
+      case Device::UI_THEME_LIGHT:
+        ui->SetTheme(RecoveryUI::Theme::LIGHT);
+        break;
+
+      case Device::UI_THEME_DARK:
+        ui->SetTheme(RecoveryUI::Theme::DARK);
+        break;
 
       case Device::MOUNT_SYSTEM: {
         static bool mounted = false;
@@ -929,8 +991,16 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
     ui->SetStage(st_cur, st_max);
   }
 
+  // Extract the YYYYMMDD / YYYYMMDD_HHMMSS timestamp from the display version string.
+  // CharaROM format: CharaROM-x.y.z-<build>-YYYYMMDD(_HHMMSS).
+  std::string ver = android::base::GetProperty("ro.chara.display.version", "");
+  std::smatch ver_date_match;
+  std::regex_search(ver, ver_date_match, std::regex("-(\\d{8}(_\\d{6})?)(-|$)"));
+  std::string ver_date = ver_date_match.str(1);  // Empty if no match.
+
   std::vector<std::string> title_lines = {
-    "Version " + android::base::GetProperty("ro.chara.display.version", "(unknown)"),
+      "Version " + android::base::GetProperty("ro.chara.build.version", "(unknown)") +
+          (ver_date.empty() ? "" : " (" + ver_date + ")"),
   };
   title_lines.push_back("Product name - " + android::base::GetProperty("ro.product.device", ""));
   if (android::base::GetBoolProperty("ro.build.ab_update", false)) {

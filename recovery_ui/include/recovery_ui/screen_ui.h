@@ -111,6 +111,10 @@ class Menu {
   virtual size_t ItemsCount() const = 0;
   virtual bool IsMain() const = 0;
   virtual void SetMenuHeight(int height) = 0;
+  // Returns a pointer to text headers when this is a TextMenu, otherwise nullptr.
+  virtual const std::vector<std::string>* TextHeaders() const {
+    return nullptr;
+  }
 
  protected:
   Menu(size_t initial_selection, const DrawInterface& draw_func);
@@ -135,6 +139,9 @@ class TextMenu : public Menu {
   int DrawHeader(int x, int y) const override;
   int DrawItems(int x, int y, int screen_width, bool long_press) const override;
   size_t ItemsCount() const override;
+  const std::vector<std::string>* TextHeaders() const override {
+    return &text_headers_;
+  }
 
   bool IsMain() const override {
     // Main menus have no headers
@@ -152,7 +159,7 @@ class TextMenu : public Menu {
   size_t MenuEnd() const;
 
   // Menu example:
-  // info:                           Lineage Recovery
+  // info:                           CharaROM Recovery
   //                                 ....
   // help messages:                  Swipe up/down to move
   //                                 Swipe left/right to select
@@ -299,6 +306,7 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
   // overall recovery state ("background image")
   void SetBackground(Icon icon) override;
   void SetSystemUpdateText(bool security_update) override;
+  void SetTheme(Theme theme) override;
 
   // progress indicator
   void SetProgressType(ProgressType type) override;
@@ -345,7 +353,10 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
   int SetSwCallback(int code, int value) override;
 
   int MenuItemHeight() const override {
-    return MenuCharHeight() + 2 * MenuItemPadding();
+    const int padding = MenuItemPadding();
+    const int base = MenuCharHeight() + 2 * padding + padding / 2;
+    const int spacing = std::max(1, padding / 5);
+    return base + spacing;
   }
 
   int MenuItemSpacing() const override {
@@ -457,6 +468,10 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
     return menu_char_height_;
   }
 
+  int DrawInfoTextLine(int x, int y, const std::string& line, bool bold) const;
+  int DrawInfoTextLineTight(int x, int y, const std::string& line, bool bold) const;
+  int DrawInfoTextLinesTight(int x, int y, const std::vector<std::string>& lines) const;
+
   std::unique_ptr<MenuDrawFunctions> menu_draw_funcs_;
 
   // The layout to use.
@@ -475,10 +490,14 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
   std::unique_ptr<GRSurface> wipe_data_confirmation_text_;
   std::unique_ptr<GRSurface> wipe_data_menu_header_text_;
 
-  std::unique_ptr<GRSurface> lineage_logo_;
+  std::unique_ptr<GRSurface> chara_logo_;
   std::unique_ptr<GRSurface> back_icon_;
   std::unique_ptr<GRSurface> back_icon_sel_;
   std::unique_ptr<GRSurface> fastbootd_logo_;
+  std::unique_ptr<GRSurface> chara_logo_light_;
+  std::unique_ptr<GRSurface> back_icon_light_;
+  std::unique_ptr<GRSurface> back_icon_sel_light_;
+  std::unique_ptr<GRSurface> fastbootd_logo_light_;
 
   // current_icon_ points to one of the frames in intro_frames_ or loop_frames_, indexed by
   // current_frame_, or error_icon_.
@@ -516,6 +535,14 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
 
   std::unique_ptr<Menu> menu_;
   int menu_start_y_;
+  struct Rect {
+    int left;
+    int top;
+    int right;
+    int bottom;
+  };
+  Rect back_button_rect_{ 0, 0, 0, 0 };
+  bool back_button_rect_valid_{ false };
 
   // An alternate text screen, swapped with 'text_' when we're viewing a log file.
   char** file_viewer_text_;
@@ -529,10 +556,16 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
   int char_height_;
   int menu_char_height_;
   int menu_char_width_;
+  int header_char_height_;
+  int header_char_width_;
+  int info_char_height_;
+  int info_char_width_;
 
   // The locale that's used to show the rendered texts.
   std::string locale_;
   bool rtl_locale_;
+
+  Theme theme_{ Theme::DARK };
 
   std::mutex updateMutex;
 
@@ -545,6 +578,8 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
   bool is_graphics_available;
 
   bool is_battery_less;
+
+  std::unique_ptr<GRSurface> info_font_surface_;
 
  private:
   void SetLocale(const std::string&);
