@@ -60,8 +60,8 @@ enum DirectRenderManager {
 };
 
 namespace {
-constexpr uint8_t kLightBgR = 0xd0;
-constexpr uint8_t kLightBgG = 0xeb;
+constexpr uint8_t kLightBgR = 0xed;
+constexpr uint8_t kLightBgG = 0xf7;
 constexpr uint8_t kLightBgB = 0xff;
 constexpr uint8_t kLightTextR = 0x0f;
 constexpr uint8_t kLightTextG = 0x17;
@@ -102,11 +102,15 @@ void RecolorSurfaceForLightTheme(GRSurface* surface) {
   GetRgbIndices(gr_pixel_format(), &r, &g, &b);
 
   constexpr uint8_t kDarkThreshold = 8;
+  constexpr uint8_t kOldLightBgR = 0xd0;
+  constexpr uint8_t kOldLightBgG = 0xeb;
+  constexpr uint8_t kOldLightBgB = 0xff;
   for (size_t y = 0; y < surface->height; ++y) {
     uint8_t* row = surface->data() + y * surface->row_bytes;
     for (size_t x = 0; x < surface->width; ++x) {
       uint8_t* p = row + x * 4;
-      if (p[r] <= kDarkThreshold && p[g] <= kDarkThreshold && p[b] <= kDarkThreshold) {
+      if ((p[r] <= kDarkThreshold && p[g] <= kDarkThreshold && p[b] <= kDarkThreshold) ||
+          (p[r] == kOldLightBgR && p[g] == kOldLightBgG && p[b] == kOldLightBgB)) {
         p[r] = kLightBgR;
         p[g] = kLightBgG;
         p[b] = kLightBgB;
@@ -1560,8 +1564,19 @@ bool ScreenRecoveryUI::Init(const std::string& locale) {
   } else {
     lineage_logo_ = LoadBitmap("logo_image");
   }
-  lineage_logo_light_ = MakeLightSurface(lineage_logo_);
-  fastbootd_logo_light_ = MakeLightSurface(fastbootd_logo_);
+  const char* lineage_logo_light_name =
+      (android::base::GetBoolProperty("ro.boot.dynamic_partitions", false) ||
+       android::base::GetBoolProperty("ro.fastbootd.available", false))
+          ? "logo_image_switch_light"
+          : "logo_image_light";
+  lineage_logo_light_ = LoadBitmap(lineage_logo_light_name);
+  if (!lineage_logo_light_) {
+    lineage_logo_light_ = MakeLightSurface(lineage_logo_);
+  }
+  fastbootd_logo_light_ = LoadBitmap("fastbootd_light");
+  if (!fastbootd_logo_light_) {
+    fastbootd_logo_light_ = MakeLightSurface(fastbootd_logo_);
+  }
   back_icon_light_ = LoadBitmap("ic_back_light");
   back_icon_sel_light_ = LoadBitmap("ic_back_sel_light");
   if (!back_icon_light_) {
