@@ -1792,10 +1792,26 @@ void ScreenRecoveryUI::ShowFile(FILE* fp) {
           show_prompt = true;
           continue;
         }
-        if (evt.key() == KEY_POWER || evt.key() == KEY_ENTER || evt.key() == KEY_BACKSPACE ||
+        if (evt.key() == KEY_ENTER || evt.key() == KEY_BACKSPACE ||
             evt.key() == KEY_BACK || evt.key() == KEY_HOMEPAGE ||
             evt.key() == KEY_ESC || evt.key() == KEY_LEFTMETA || evt.key() == KEY_RIGHTMETA) {
           return;
+        } else if (evt.key() == KEY_POWER) {
+          off_t page_bytes = static_cast<off_t>(text_rows_ * text_cols_);
+          off_t start = 0;
+          if (sb.st_size > page_bytes) {
+            start = sb.st_size - page_bytes;
+          }
+          off_t prev = 0;
+          if (start > page_bytes) {
+            prev = start - page_bytes;
+          }
+          fseek(fp, start, SEEK_SET);
+          offsets.clear();
+          offsets.push_back(prev);
+          if (start != prev) {
+            offsets.push_back(start);
+          }
         } else if (evt.key() == KEY_UP || evt.key() == KEY_VOLUMEUP || evt.key() == KEY_SCROLLUP ||
                    evt.key() == KEY_PAGEUP) {
           if (offsets.size() <= 1) {
