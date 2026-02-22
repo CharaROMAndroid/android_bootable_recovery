@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/klog.h>
 #include <sys/mount.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -77,10 +78,20 @@ static constexpr const char* COMMAND_FILE = "/cache/recovery/command";
 static constexpr const char* LAST_KMSG_FILE = "/cache/recovery/last_kmsg";
 static constexpr const char* LAST_LOG_FILE = "/cache/recovery/last_log";
 static constexpr const char* LOCALE_FILE = "/cache/recovery/last_locale";
+static constexpr const char* DMESG_FILE = "/tmp/dmesg.txt";
 
 static constexpr const char* CACHE_ROOT = "/cache";
 
 static bool save_current_log = false;
+static constexpr size_t kMaxKernelLogBytes = 512 * 1024;
+static constexpr size_t kMaxKlogReadBytes = 2 * 1024 * 1024;
+
+#ifndef KLOG_ACTION_READ_ALL
+#define KLOG_ACTION_READ_ALL 3
+#endif
+#ifndef KLOG_ACTION_SIZE_BUFFER
+#define KLOG_ACTION_SIZE_BUFFER 10
+#endif
 
 /*
  * The recovery tool communicates with the main system through /cache files.
@@ -186,64 +197,25 @@ bool ask_to_ab_reboot(Device* device) {
 }
 
 bool ask_to_continue_unverified(Device* device) {
+  if (get_build_type() == "user") {
+    return false;
+  }
   device->GetUI()->SetProgressType(RecoveryUI::EMPTY);
   return yes_no(device, "Signature verification failed", "Install anyway?");
 }
 
 bool ask_to_continue_downgrade(Device* device) {
+  if (get_build_type() == "user") {
+    return false;
+  }
   device->GetUI()->SetProgressType(RecoveryUI::EMPTY);
   return yes_no(device, "This package will downgrade your system", "Install anyway?");
 }
-  
-std::string get_chosen_slot(Device* device) {
-  std::vector<std::string> headers{ "Choose which slot to boot into on next boot." };
-  std::vector<std::string> items{ "A", "B" };
-  size_t chosen_item = device->GetUI()->ShowMenu(
-      headers, items, 0, true,
-      std::bind(&Device::HandleMenuKey, device, std::placeholders::_1, std::placeholders::_2));
-  if (chosen_item < 0)
-    return "";
-  return items[chosen_item];
-}
-
-int set_slot(Device* device) {
-  std::string slot = get_chosen_slot(device);
-  CommandResult ret;
-  auto cb = [&ret](CommandResult result) { ret = result; };
-  Slot sslot = (slot == "A") ? 0 : 1;
-  sp<IBootControl> module = IBootControl::getService();
-  if (!module) {
-    const auto instance_name = std::string(
-        ::aidl::android::hardware::boot::IBootControl::descriptor) + "/default";
-    if (AServiceManager_isDeclared(instance_name.c_str())) {
-      auto amodule = ::aidl::android::hardware::boot::IBootControl::fromBinder(
-          ndk::SpAIBinder(AServiceManager_waitForService(instance_name.c_str())));
-      if (amodule == nullptr) {
-        device->GetUI()->Print("AIDL bootctrl module is declared but returned nullptr.\n");
-      } else {
-        auto result = amodule->setActiveBootSlot(sslot);
-        if (result.isOk()) {
-          device->GetUI()->Print("Switched slot to %s.\n", slot.c_str());
-        } else {
-          device->GetUI()->Print("Error changing bootloader boot slot to %s", slot.c_str());
-        }
-      }
-    } else {
-      device->GetUI()->Print("Error getting bootctrl module.\n");
-    }
-  } else {
-      auto result = module->setActiveBootSlot(sslot, cb);
-    if (result.isOk() && ret.success) {
-      if (slot == "A" || slot == "B") device->GetUI()->Print("Switched slot to %s.\n", slot.c_str());
-      device->GoHome();
-    } else {
-      if (slot == "A" || slot == "B") device->GetUI()->Print("Error changing bootloader boot slot to %s", slot.c_str());
-    }
-  }
-  return ret.success ? 0 : 1;
-}
 
 bool ask_to_continue_spl_downgrade(Device* device) {
+  if (get_build_type() == "user") {
+    return false;
+  }
   device->GetUI()->SetProgressType(RecoveryUI::EMPTY);
   return yes_no(device,
     "WARNING: Security patch level downgrade detected. "
@@ -385,6 +357,36 @@ static InstallResult prompt_and_wipe_data(Device* device) {
       }
     }
   }
+}
+
+static std::string ReadDmesg() {
+  int size = klogctl(KLOG_ACTION_SIZE_BUFFER, nullptr, 0);
+  if (size <= 0) {
+    return android::base::StringPrintf("Failed to get dmesg size: %s\n", strerror(errno));
+  }
+  if (static_cast<size_t>(size) > kMaxKlogReadBytes) {
+    size = static_cast<int>(kMaxKlogReadBytes);
+  }
+
+  std::string buffer;
+  buffer.resize(size);
+  int read_size = klogctl(KLOG_ACTION_READ_ALL, buffer.data(), size);
+  if (read_size < 0) {
+    return android::base::StringPrintf("Failed to read dmesg: %s\n", strerror(errno));
+  }
+  buffer.resize(read_size);
+  if (buffer.size() > kMaxKernelLogBytes) {
+    buffer.erase(0, buffer.size() - kMaxKernelLogBytes);
+  }
+  return buffer;
+}
+
+static void ShowKernelLog(Device* device, const std::string& path, const std::string& content) {
+  if (!android::base::WriteStringToFile(content, path)) {
+    device->GetUI()->Print("Failed to write %s: %s\n", path.c_str(), strerror(errno));
+    return;
+  }
+  device->GetUI()->ShowFile(path);
 }
 
 static void choose_recovery_file(Device* device) {
@@ -583,6 +585,7 @@ change_menu:
       case Device::MENU_WIPE:
       case Device::MENU_ADVANCED:
       case Device::MENU_UI:
+      case Device::MENU_LOGS:
       case Device::MENU_REBOOT:
         goto change_menu;
 
@@ -691,6 +694,12 @@ change_menu:
       case Device::VIEW_RECOVERY_LOGS:
         choose_recovery_file(device);
         break;
+
+      case Device::VIEW_DMESG: {
+        std::string content = ReadDmesg();
+        ShowKernelLog(device, DMESG_FILE, content);
+        break;
+      }
 
       case Device::ENABLE_ADB:
         android::base::SetProperty("ro.adb.secure.recovery", "0");
