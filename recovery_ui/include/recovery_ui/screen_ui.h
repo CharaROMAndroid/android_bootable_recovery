@@ -468,6 +468,10 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
     return menu_char_height_;
   }
 
+  int DrawInfoTextLine(int x, int y, const std::string& line, bool bold) const;
+  int DrawInfoTextLineTight(int x, int y, const std::string& line, bool bold) const;
+  int DrawInfoTextLinesTight(int x, int y, const std::vector<std::string>& lines) const;
+
   std::unique_ptr<MenuDrawFunctions> menu_draw_funcs_;
 
   // The layout to use.
@@ -554,6 +558,8 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
   int menu_char_width_;
   int header_char_height_;
   int header_char_width_;
+  int info_char_height_;
+  int info_char_width_;
 
   // The locale that's used to show the rendered texts.
   std::string locale_;
@@ -572,6 +578,8 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
   bool is_graphics_available;
 
   bool is_battery_less;
+
+  std::unique_ptr<GRSurface> info_font_surface_;
 
  private:
   void SetLocale(const std::string&);

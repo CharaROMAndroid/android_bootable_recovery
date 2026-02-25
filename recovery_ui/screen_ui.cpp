@@ -1013,10 +1013,62 @@ int ScreenRecoveryUI::DrawTextLine(int x, int y, const std::string& line, bool b
   return char_height_ + 4;
 }
 
+int ScreenRecoveryUI::DrawInfoTextLine(int x, int y, const std::string& line, bool bold) const {
+  const GRFont* font = gr_sys_font();
+  GRFont info_font{};
+  int line_height = char_height_;
+  if (info_font_surface_) {
+    info_font.texture = info_font_surface_.get();
+    info_font.char_width = info_char_width_;
+    info_font.char_height = info_char_height_;
+    font = &info_font;
+    line_height = info_char_height_;
+  }
+  gr_text(font, x, y, line.c_str(), bold);
+  return line_height + 4;
+}
+
 int ScreenRecoveryUI::DrawTextLines(int x, int y, const std::vector<std::string>& lines) const {
   int offset = 0;
   for (const auto& line : lines) {
     offset += DrawTextLine(x, y + offset, line, false);
+  }
+  return offset;
+}
+
+int ScreenRecoveryUI::DrawInfoTextLineTight(int x, int y, const std::string& line, bool bold) const {
+  const GRFont* font = gr_sys_font();
+  GRFont info_font{};
+  int line_height = char_height_;
+  if (info_font_surface_) {
+    info_font.texture = info_font_surface_.get();
+    info_font.char_width = info_char_width_;
+    info_font.char_height = info_char_height_;
+    font = &info_font;
+    line_height = info_char_height_;
+  }
+  if (font == nullptr || font->char_width <= 0) {
+    return DrawInfoTextLine(x, y, line, bold);
+  }
+  int advance = font->char_width;
+  int tighten = std::max(1, font->char_width / 8);
+  if (advance > tighten) {
+    advance -= tighten;
+  }
+  int cur_x = x;
+  for (unsigned char ch : line) {
+    char s[2] = { static_cast<char>(ch), 0 };
+    gr_text(font, cur_x, y, s, bold);
+    cur_x += advance;
+  }
+  return line_height + 4;
+}
+
+int ScreenRecoveryUI::DrawInfoTextLinesTight(int x, int y,
+                                             const std::vector<std::string>& lines) const {
+  int offset = 0;
+  for (const auto& line : lines) {
+    offset += DrawInfoTextLineTight(x, y + offset, line, false);
   }
   return offset;
 }
@@ -1112,7 +1164,7 @@ void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
     int x = margin_width_ + kMenuIndent;
     if (!title_lines_.empty()) {
       SetColor(UIElement::INFO);
-      y += DrawTextLines(x, y, title_lines_);
+      y += DrawInfoTextLinesTight(x, y, title_lines_);
       y += std::max(4, MenuItemPadding() / 2);
     }
     back_button_rect_valid_ = false;
@@ -1242,6 +1294,13 @@ void ScreenRecoveryUI::draw_battery_capacity_locked() {
   int x;
   int y = margin_height_ + gr_get_height(lineage_logo_.get());
   int icon_x, icon_y, icon_h, icon_w;
+  int info_char_width = info_char_width_ > 0 ? info_char_width_ : char_width_;
+  int info_char_height = info_char_height_ > 0 ? info_char_height_ : char_height_;
+  int info_advance = info_char_width;
+  int info_tighten = std::max(1, info_char_width / 8);
+  if (info_advance > info_tighten) {
+    info_advance -= info_tighten;
+  }
 
   if (is_battery_less) return;
 
@@ -1255,30 +1314,30 @@ void ScreenRecoveryUI::draw_battery_capacity_locked() {
 
   if (menu_) {
     // Battery icon
-    x = (ScreenWidth() - margin_width_ * 2 - kMenuIndent) - char_width_;
+    x = (ScreenWidth() - margin_width_ * 2 - kMenuIndent) - info_char_width;
 
     SetColor(UIElement::INFO);
 
     // Top
-    icon_x = x + char_width_ / 3;
+    icon_x = x + info_char_width / 3;
     icon_y = y;
-    icon_w = char_width_ / 3;
-    icon_h = char_height_ / 12;
+    icon_w = info_char_width / 3;
+    icon_h = info_char_height / 12;
     gr_fill(icon_x, icon_y, icon_x + icon_w, icon_y + icon_h);
 
     // Main rect
     icon_x = x;
     icon_y = y + icon_h;
-    icon_w = char_width_;
-    icon_h = char_height_ - (char_height_ / 12);
+    icon_w = info_char_width;
+    icon_h = info_char_height - (info_char_height / 12);
     gr_fill(icon_x, icon_y, icon_x + icon_w, icon_y + icon_h);
 
     // Capacity
     if (batt_capacity_ <= 15) SetColor(UIElement::BATTERY_LOW);
-    icon_x = x + char_width_ / 6;
-    icon_y = y + char_height_ / 12;
-    icon_w = char_width_ - (2 * char_width_ / 6);
-    icon_h = char_height_ - (3 * char_height_ / 12);
+    icon_x = x + info_char_width / 6;
+    icon_y = y + info_char_height / 12;
+    icon_w = info_char_width - (2 * info_char_width / 6);
+    icon_h = info_char_height - (3 * info_char_height / 12);
     int cap_h = icon_h * batt_capacity_ / 100;
     gr_fill(icon_x, icon_y + icon_h - cap_h, icon_x + icon_w, icon_y + icon_h);
     if (theme_ == Theme::LIGHT) {
@@ -1288,12 +1347,12 @@ void ScreenRecoveryUI::draw_battery_capacity_locked() {
     }
     gr_fill(icon_x, icon_y, icon_x + icon_w, icon_y + icon_h - cap_h);
 
-    x -= char_width_;  // Separator
+    x -= info_char_width;  // Separator
 
     // Battery text
     SetColor(UIElement::INFO);
-    x -= batt_capacity.size() * char_width_;
-    DrawTextLine(x, icon_y, batt_capacity.c_str(), false);
+    x -= batt_capacity.size() * info_advance;
+    DrawInfoTextLineTight(x, icon_y, batt_capacity.c_str(), false);
   }
 }
 
@@ -1479,6 +1538,23 @@ bool ScreenRecoveryUI::InitTextParams() {
       gr_font_size(gr_header_font(), &header_char_width_, &header_char_height_) != 0) {
     header_char_width_ = menu_char_width_;
     header_char_height_ = menu_char_height_;
+  }
+  info_char_width_ = char_width_;
+  info_char_height_ = char_height_;
+  info_font_surface_.reset();
+  const bool prefer_large_info_font = (char_width_ >= 18 || char_height_ >= 32);
+  const char* preferred = prefer_large_info_font ? "font_info_18" : "font_info_12";
+  const char* fallback = prefer_large_info_font ? "font_info_12" : "font_info_18";
+  GRSurface* info_surface = nullptr;
+  if (res_create_alpha_surface(preferred, &info_surface) != 0) {
+    if (res_create_alpha_surface(fallback, &info_surface) != 0) {
+      info_surface = nullptr;
+    }
+  }
+  if (info_surface) {
+    info_font_surface_.reset(info_surface);
+    info_char_width_ = info_surface->width / 96;
+    info_char_height_ = info_surface->height / 2;
   }
   text_rows_ = (ScreenHeight() - margin_height_ * 2) / char_height_;
   text_cols_ = (ScreenWidth() - margin_width_ * 2) / char_width_;
