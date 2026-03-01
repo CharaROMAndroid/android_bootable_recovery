@@ -30,6 +30,7 @@
 #include <functional>
 #include <iterator>
 #include <memory>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -990,8 +991,16 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
     ui->SetStage(st_cur, st_max);
   }
 
+  // Extract the YYYYMMDD / YYYYMMDD_HHMMSS timestamp from the display version string.
+  // AviumUI format: AviumUI-x.y.z-<build>-YYYYMMDD(_HHMMSS).
+  std::string ver = android::base::GetProperty("ro.avium.display.version", "");
+  std::smatch ver_date_match;
+  std::regex_search(ver, ver_date_match, std::regex("-(\\d{8}(_\\d{6})?)(-|$)"));
+  std::string ver_date = ver_date_match.str(1);  // Empty if no match.
+
   std::vector<std::string> title_lines = {
-      "Version " + android::base::GetProperty("ro.chara.display.version", "(unknown)"),
+      "Version " + android::base::GetProperty("ro.chara.build.version", "(unknown)") +
+          (ver_date.empty() ? "" : " (" + ver_date + ")"),
   };
   title_lines.push_back("Product name - " + android::base::GetProperty("ro.product.device", ""));
   if (android::base::GetBoolProperty("ro.build.ab_update", false)) {
