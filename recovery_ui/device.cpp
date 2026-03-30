@@ -58,8 +58,8 @@ static std::vector<menu_action_t> g_logs_actions{
 
 static std::vector<std::string> g_ui_header{ "UI options" };
 static std::vector<menu_action_t> g_ui_actions{
-  { "Light (Default)", Device::UI_THEME_LIGHT },
-  { "Dark", Device::UI_THEME_DARK },
+  { "Light", Device::UI_THEME_LIGHT },
+  { "Dark (Default)", Device::UI_THEME_DARK },
 };
 
 static std::vector<std::string> g_reboot_header{ "Reboot options" };
