@@ -1150,18 +1150,18 @@ void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
   if (menu_) {
     GRSurface* logo = nullptr;
     if (fastbootd_logo_enabled_) {
-      if (theme_ == Theme::LIGHT && use_alt_logo_ && avium_logo_alt_light_) {
-        logo = avium_logo_alt_light_.get();
+      if (theme_ == Theme::LIGHT && use_alt_logo_ && chara_logo_alt_light_) {
+        logo = chara_logo_alt_light_.get();
       } else {
         logo = (theme_ == Theme::LIGHT && fastbootd_logo_light_) ? fastbootd_logo_light_.get()
                                                                  : fastbootd_logo_.get();
       }
     } else {
-      if (theme_ == Theme::LIGHT && use_alt_logo_ && avium_logo_alt_light_) {
-        logo = avium_logo_alt_light_.get();
+      if (theme_ == Theme::LIGHT && use_alt_logo_ && chara_logo_alt_light_) {
+        logo = chara_logo_alt_light_.get();
       } else {
-        logo = (theme_ == Theme::LIGHT && avium_logo_light_) ? avium_logo_light_.get()
-                                                               : avium_logo_.get();
+        logo = (theme_ == Theme::LIGHT && chara_logo_light_) ? chara_logo_light_.get()
+                                                               : chara_logo_.get();
       }
     }
     const int logo_width = static_cast<int>(gr_get_width(logo));
@@ -1304,7 +1304,7 @@ void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
 // Draws the battery capacity on the screen. Should only be called with updateMutex locked.
 void ScreenRecoveryUI::draw_battery_capacity_locked() {
   int x;
-  int y = margin_height_ + gr_get_height(avium_logo_.get());
+  int y = margin_height_ + gr_get_height(chara_logo_.get());
   if (logo_rect_valid_) {
     y = logo_rect_.bottom;
   }
@@ -1651,31 +1651,31 @@ bool ScreenRecoveryUI::Init(const std::string& locale) {
   const bool uses_switch_logo =
       android::base::GetBoolProperty("ro.boot.dynamic_partitions", false) ||
       android::base::GetBoolProperty("ro.fastbootd.available", false);
-  const char* avium_logo_name = uses_switch_logo ? "logo_image_switch" : "logo_image";
-  avium_logo_ = LoadBitmap(avium_logo_name);
+  const char* chara_logo_name = uses_switch_logo ? "logo_image_switch" : "logo_image";
+  chara_logo_ = LoadBitmap(chara_logo_name);
   if (uses_switch_logo) {
     fastbootd_logo_ = LoadBitmap("fastbootd");
   }
-  const char* avium_logo_light_name =
+  const char* chara_logo_light_name =
       uses_switch_logo ? "logo_image_switch_light" : "logo_image_light";
-  avium_logo_light_ = LoadBitmap(avium_logo_light_name);
-  if (!avium_logo_light_) {
-    avium_logo_light_ = MakeLightSurface(avium_logo_);
+  chara_logo_light_ = LoadBitmap(chara_logo_light_name);
+  if (!chara_logo_light_) {
+    chara_logo_light_ = MakeLightSurface(chara_logo_);
   }
-  const char* avium_logo_alt_name =
+  const char* chara_logo_alt_name =
       uses_switch_logo ? "logo_image_switch_alt" : "logo_image_alt";
-  avium_logo_alt_ = LoadBitmap(avium_logo_alt_name);
-  if (!avium_logo_alt_ && uses_switch_logo) {
-    avium_logo_alt_ = LoadBitmap("logo_image_alt");
+  chara_logo_alt_ = LoadBitmap(chara_logo_alt_name);
+  if (!chara_logo_alt_ && uses_switch_logo) {
+    chara_logo_alt_ = LoadBitmap("logo_image_alt");
   }
-  const char* avium_logo_alt_light_name =
+  const char* chara_logo_alt_light_name =
       uses_switch_logo ? "logo_image_switch_alt_light" : "logo_image_alt_light";
-  avium_logo_alt_light_ = LoadBitmap(avium_logo_alt_light_name);
-  if (!avium_logo_alt_light_ && uses_switch_logo) {
-    avium_logo_alt_light_ = LoadBitmap("logo_image_alt_light");
+  chara_logo_alt_light_ = LoadBitmap(chara_logo_alt_light_name);
+  if (!chara_logo_alt_light_ && uses_switch_logo) {
+    chara_logo_alt_light_ = LoadBitmap("logo_image_alt_light");
   }
-  if (!avium_logo_alt_light_ && avium_logo_alt_) {
-    avium_logo_alt_light_ = MakeLightSurface(avium_logo_alt_);
+  if (!chara_logo_alt_light_ && chara_logo_alt_) {
+    chara_logo_alt_light_ = MakeLightSurface(chara_logo_alt_);
   }
   fastbootd_logo_light_ = LoadBitmap("fastbootd_light");
   if (!fastbootd_logo_light_) {

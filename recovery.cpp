@@ -992,8 +992,8 @@ Device::BuiltinAction start_recovery(Device* device, const std::vector<std::stri
   }
 
   // Extract the YYYYMMDD / YYYYMMDD_HHMMSS timestamp from the display version string.
-  // AviumUI format: AviumUI-x.y.z-<build>-YYYYMMDD(_HHMMSS).
-  std::string ver = android::base::GetProperty("ro.avium.display.version", "");
+  // CharaROM format: CharaROM-x.y.z-<build>-YYYYMMDD(_HHMMSS).
+  std::string ver = android::base::GetProperty("ro.chara.display.version", "");
   std::smatch ver_date_match;
   std::regex_search(ver, ver_date_match, std::regex("-(\\d{8}(_\\d{6})?)(-|$)"));
   std::string ver_date = ver_date_match.str(1);  // Empty if no match.
