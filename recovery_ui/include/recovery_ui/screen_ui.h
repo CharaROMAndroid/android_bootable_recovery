@@ -487,8 +487,6 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
   std::unique_ptr<GRSurface> back_icon_sel_;
   std::unique_ptr<GRSurface> fastbootd_logo_;
   std::unique_ptr<GRSurface> chara_logo_light_;
-  std::unique_ptr<GRSurface> chara_logo_alt_;
-  std::unique_ptr<GRSurface> chara_logo_alt_light_;
   std::unique_ptr<GRSurface> back_icon_light_;
   std::unique_ptr<GRSurface> back_icon_sel_light_;
   std::unique_ptr<GRSurface> fastbootd_logo_light_;
@@ -537,10 +535,6 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
   };
   Rect back_button_rect_{ 0, 0, 0, 0 };
   bool back_button_rect_valid_{ false };
-  Rect logo_rect_{ 0, 0, 0, 0 };
-  bool logo_rect_valid_{ false };
-  int logo_tap_count_{ 0 };
-  bool use_alt_logo_{ false };
 
   // An alternate text screen, swapped with 'text_' when we're viewing a log file.
   char** file_viewer_text_;
