@@ -1145,11 +1145,11 @@ void ScreenRecoveryUI::draw_screen_locked() {
 void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
     const std::vector<std::string>& help_message) {
   int y = margin_height_;
-  logo_rect_valid_ = false;
 
   if (menu_) {
     GRSurface* logo = nullptr;
     if (fastbootd_logo_enabled_) {
+<<<<<<< HEAD
       if (theme_ == Theme::LIGHT && use_alt_logo_ && chara_logo_alt_light_) {
         logo = chara_logo_alt_light_.get();
       } else {
@@ -1163,14 +1163,18 @@ void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
         logo = (theme_ == Theme::LIGHT && chara_logo_light_) ? chara_logo_light_.get()
                                                                : chara_logo_.get();
       }
+=======
+      logo = (theme_ == Theme::LIGHT && fastbootd_logo_light_) ? fastbootd_logo_light_.get()
+                                                               : fastbootd_logo_.get();
+    } else {
+      logo = (theme_ == Theme::LIGHT && lineage_logo_light_) ? lineage_logo_light_.get()
+                                                             : lineage_logo_.get();
+>>>>>>> parent of 04ae3a62 (recovery: Introduct a little uwu easter egg with uwu logo)
     }
-    const int logo_width = static_cast<int>(gr_get_width(logo));
-    const int logo_height = static_cast<int>(gr_get_height(logo));
-    const int centered_x = ScreenWidth() / 2 - logo_width / 2;
-    const int logo_top = y;
-    DrawSurface(logo, 0, 0, logo_width, logo_height, centered_x, logo_top);
-    logo_rect_ = { centered_x, logo_top, centered_x + logo_width, logo_top + logo_height };
-    logo_rect_valid_ = true;
+    auto logo_width = gr_get_width(logo);
+    auto logo_height = gr_get_height(logo);
+    auto centered_x = ScreenWidth() / 2 - logo_width / 2;
+    DrawSurface(logo, 0, 0, logo_width, logo_height, centered_x, y);
     y += logo_height;
 
     int x = margin_width_ + kMenuIndent;
@@ -1304,10 +1308,14 @@ void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
 // Draws the battery capacity on the screen. Should only be called with updateMutex locked.
 void ScreenRecoveryUI::draw_battery_capacity_locked() {
   int x;
+<<<<<<< HEAD
   int y = margin_height_ + gr_get_height(chara_logo_.get());
   if (logo_rect_valid_) {
     y = logo_rect_.bottom;
   }
+=======
+  int y = margin_height_ + gr_get_height(lineage_logo_.get());
+>>>>>>> parent of 04ae3a62 (recovery: Introduct a little uwu easter egg with uwu logo)
   int icon_x, icon_y, icon_h, icon_w;
   int info_char_width = info_char_width_ > 0 ? info_char_width_ : char_width_;
   int info_char_height = info_char_height_ > 0 ? info_char_height_ : char_height_;
@@ -1648,14 +1656,23 @@ bool ScreenRecoveryUI::Init(const std::string& locale) {
 
   back_icon_ = LoadBitmap("ic_back");
   back_icon_sel_ = LoadBitmap("ic_back_sel");
+<<<<<<< HEAD
   const bool uses_switch_logo =
       android::base::GetBoolProperty("ro.boot.dynamic_partitions", false) ||
       android::base::GetBoolProperty("ro.fastbootd.available", false);
   const char* chara_logo_name = uses_switch_logo ? "logo_image_switch" : "logo_image";
   chara_logo_ = LoadBitmap(chara_logo_name);
   if (uses_switch_logo) {
+=======
+  if (android::base::GetBoolProperty("ro.boot.dynamic_partitions", false) ||
+      android::base::GetBoolProperty("ro.fastbootd.available", false)) {
+    lineage_logo_ = LoadBitmap("logo_image_switch");
+>>>>>>> parent of 04ae3a62 (recovery: Introduct a little uwu easter egg with uwu logo)
     fastbootd_logo_ = LoadBitmap("fastbootd");
+  } else {
+    lineage_logo_ = LoadBitmap("logo_image");
   }
+<<<<<<< HEAD
   const char* chara_logo_light_name =
       uses_switch_logo ? "logo_image_switch_light" : "logo_image_light";
   chara_logo_light_ = LoadBitmap(chara_logo_light_name);
@@ -1677,6 +1694,17 @@ bool ScreenRecoveryUI::Init(const std::string& locale) {
   if (!chara_logo_alt_light_ && chara_logo_alt_) {
     chara_logo_alt_light_ = MakeLightSurface(chara_logo_alt_);
   }
+=======
+  const char* lineage_logo_light_name =
+      (android::base::GetBoolProperty("ro.boot.dynamic_partitions", false) ||
+       android::base::GetBoolProperty("ro.fastbootd.available", false))
+          ? "logo_image_switch_light"
+          : "logo_image_light";
+  lineage_logo_light_ = LoadBitmap(lineage_logo_light_name);
+  if (!lineage_logo_light_) {
+    lineage_logo_light_ = MakeLightSurface(lineage_logo_);
+  }
+>>>>>>> parent of 04ae3a62 (recovery: Introduct a little uwu easter egg with uwu logo)
   fastbootd_logo_light_ = LoadBitmap("fastbootd_light");
   if (!fastbootd_logo_light_) {
     fastbootd_logo_light_ = MakeLightSurface(fastbootd_logo_);
@@ -2044,19 +2072,6 @@ int ScreenRecoveryUI::SelectMenu(const Point& p) {
   int new_sel = Device::kNoAction;
   std::lock_guard<std::mutex> lg(updateMutex);
   if (menu_) {
-    if (theme_ == Theme::LIGHT && logo_rect_valid_ &&
-        point.x() >= logo_rect_.left && point.x() <= logo_rect_.right &&
-        point.y() >= logo_rect_.top && point.y() <= logo_rect_.bottom) {
-      if (++logo_tap_count_ >= 7) {
-        use_alt_logo_ = true;
-        logo_tap_count_ = 0;
-        update_screen_locked();
-      }
-      return Device::kNoAction;
-    }
-    if (logo_tap_count_ > 0 && theme_ == Theme::LIGHT) {
-      logo_tap_count_ = 0;
-    }
     if (!menu_->IsMain()) {
       if (back_button_rect_valid_ && point.x() >= back_button_rect_.left &&
           point.x() <= back_button_rect_.right && point.y() >= back_button_rect_.top &&
