@@ -63,9 +63,9 @@ namespace {
 constexpr uint8_t kLightBgR = 0xed;
 constexpr uint8_t kLightBgG = 0xf7;
 constexpr uint8_t kLightBgB = 0xff;
-constexpr uint8_t kLightTextR = 0xb1;
-constexpr uint8_t kLightTextG = 0x12;
-constexpr uint8_t kLightTextB = 0x26;
+constexpr uint8_t kLightTextR = 0xff;
+constexpr uint8_t kLightTextG = 0xff;
+constexpr uint8_t kLightTextB = 0xff;
 constexpr uint8_t kLightSelectedTextR = 0xff;
 constexpr uint8_t kLightSelectedTextG = 0xff;
 constexpr uint8_t kLightSelectedTextB = 0xff;
@@ -820,8 +820,6 @@ void ScreenRecoveryUI::SetColor(UIElement e) const {
         gr_color(0xff, 0xff, 0xff, 230);
         break;
       case UIElement::MENU_SEL_BG:
-        gr_color(kLightSelectedTextR, kLightSelectedTextG, kLightSelectedTextB, 255);
-        break;
       case UIElement::SCROLLBAR:
         gr_color(kLightHighlightR, kLightHighlightG, kLightHighlightB, 255);
         break;
