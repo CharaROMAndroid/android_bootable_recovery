@@ -63,12 +63,9 @@ namespace {
 constexpr uint8_t kLightBgR = 0xed;
 constexpr uint8_t kLightBgG = 0xf7;
 constexpr uint8_t kLightBgB = 0xff;
-constexpr uint8_t kLightTextR = 0xff;
-constexpr uint8_t kLightTextG = 0xff;
-constexpr uint8_t kLightTextB = 0xff;
-constexpr uint8_t kLightSelectedTextR = 0xff;
-constexpr uint8_t kLightSelectedTextG = 0xff;
-constexpr uint8_t kLightSelectedTextB = 0xff;
+constexpr uint8_t kLightTextR = 0xFF;
+constexpr uint8_t kLightTextG = 0xD1;
+constexpr uint8_t kLightTextB = 0x76;
 constexpr uint8_t kLightHighlightR = 0xb1;
 constexpr uint8_t kLightHighlightG = 0x12;
 constexpr uint8_t kLightHighlightB = 0x26;
