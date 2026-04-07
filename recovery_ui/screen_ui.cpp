@@ -66,6 +66,9 @@ constexpr uint8_t kLightBgB = 0xff;
 constexpr uint8_t kLightTextR = 0xb1;
 constexpr uint8_t kLightTextG = 0x12;
 constexpr uint8_t kLightTextB = 0x26;
+constexpr uint8_t kLightSelectedTextR = 0xff;
+constexpr uint8_t kLightSelectedTextG = 0xff;
+constexpr uint8_t kLightSelectedTextB = 0xff;
 constexpr uint8_t kLightHighlightR = 0xb1;
 constexpr uint8_t kLightHighlightG = 0x12;
 constexpr uint8_t kLightHighlightB = 0x26;
@@ -808,7 +811,11 @@ void ScreenRecoveryUI::SetColor(UIElement e) const {
       case UIElement::INFO:
       case UIElement::MENU:
       case UIElement::LOG:
-        gr_color(kLightTextR, kLightTextG, kLightTextB, 255);
+        if (is_selected) {
+          gr_color(kLightSelectedTextR, kLightSelectedTextG, kLightSelectedTextB, 255);
+        } else {
+          gr_color(kLightTextR, kLightTextG, kLightTextB, 255);
+        }
         break;
       case UIElement::HEADER:
         gr_color(kHeaderLightR, kHeaderLightG, kHeaderLightB, 255);
@@ -824,13 +831,21 @@ void ScreenRecoveryUI::SetColor(UIElement e) const {
         gr_color(kLightHighlightR, kLightHighlightG, kLightHighlightB, 255);
         break;
       case UIElement::MENU_SEL_FG:
-        gr_color(kLightTextR, kLightTextG, kLightTextB, 255);
+        if (is_selected) {
+          gr_color(kLightSelectedTextR, kLightSelectedTextG, kLightSelectedTextB, 255);
+        } else {
+          gr_color(kLightTextR, kLightTextG, kLightTextB, 255);
+        }
         break;
       case UIElement::TEXT_FILL:
         gr_color(255, 255, 255, 160);
         break;
       default:
-        gr_color(kLightTextR, kLightTextG, kLightTextB, 255);
+        if (is_selected) {
+          gr_color(kLightSelectedTextR, kLightSelectedTextG, kLightSelectedTextB, 255);
+        } else {
+          gr_color(kLightTextR, kLightTextG, kLightTextB, 255);
+        }
         break;
     }
     return;
