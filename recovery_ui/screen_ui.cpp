@@ -817,6 +817,8 @@ void ScreenRecoveryUI::SetColor(UIElement e) const {
         gr_color(0xff, 0xff, 0xff, 230);
         break;
       case UIElement::MENU_SEL_BG:
+        gr_color(kLightSelectedTextR, kLightSelectedTextG, kLightSelectedTextB, 255);
+        break;
       case UIElement::SCROLLBAR:
         gr_color(kLightHighlightR, kLightHighlightG, kLightHighlightB, 255);
         break;
