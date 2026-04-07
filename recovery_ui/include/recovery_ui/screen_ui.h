@@ -565,7 +565,7 @@ class ScreenRecoveryUI : public RecoveryUI, public DrawInterface {
   std::string locale_;
   bool rtl_locale_;
 
-  Theme theme_{ Theme::LIGHT };
+  Theme theme_{ Theme::DARK };
 
   std::mutex updateMutex;
 
