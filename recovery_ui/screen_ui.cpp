@@ -1146,27 +1146,11 @@ void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
   if (menu_) {
     GRSurface* logo = nullptr;
     if (fastbootd_logo_enabled_) {
-<<<<<<< HEAD
-      if (theme_ == Theme::LIGHT && use_alt_logo_ && chara_logo_alt_light_) {
-        logo = chara_logo_alt_light_.get();
-      } else {
-        logo = (theme_ == Theme::LIGHT && fastbootd_logo_light_) ? fastbootd_logo_light_.get()
-                                                                 : fastbootd_logo_.get();
-      }
-    } else {
-      if (theme_ == Theme::LIGHT && use_alt_logo_ && chara_logo_alt_light_) {
-        logo = chara_logo_alt_light_.get();
-      } else {
-        logo = (theme_ == Theme::LIGHT && chara_logo_light_) ? chara_logo_light_.get()
-                                                               : chara_logo_.get();
-      }
-=======
       logo = (theme_ == Theme::LIGHT && fastbootd_logo_light_) ? fastbootd_logo_light_.get()
                                                                : fastbootd_logo_.get();
     } else {
-      logo = (theme_ == Theme::LIGHT && lineage_logo_light_) ? lineage_logo_light_.get()
-                                                             : lineage_logo_.get();
->>>>>>> parent of 04ae3a62 (recovery: Introduct a little uwu easter egg with uwu logo)
+      logo = (theme_ == Theme::LIGHT && chara_logo_light_) ? chara_logo_light_.get()
+                                                             : chara_logo_.get();
     }
     auto logo_width = gr_get_width(logo);
     auto logo_height = gr_get_height(logo);
@@ -1305,14 +1289,7 @@ void ScreenRecoveryUI::draw_menu_and_text_buffer_locked(
 // Draws the battery capacity on the screen. Should only be called with updateMutex locked.
 void ScreenRecoveryUI::draw_battery_capacity_locked() {
   int x;
-<<<<<<< HEAD
   int y = margin_height_ + gr_get_height(chara_logo_.get());
-  if (logo_rect_valid_) {
-    y = logo_rect_.bottom;
-  }
-=======
-  int y = margin_height_ + gr_get_height(lineage_logo_.get());
->>>>>>> parent of 04ae3a62 (recovery: Introduct a little uwu easter egg with uwu logo)
   int icon_x, icon_y, icon_h, icon_w;
   int info_char_width = info_char_width_ > 0 ? info_char_width_ : char_width_;
   int info_char_height = info_char_height_ > 0 ? info_char_height_ : char_height_;
@@ -1653,55 +1630,22 @@ bool ScreenRecoveryUI::Init(const std::string& locale) {
 
   back_icon_ = LoadBitmap("ic_back");
   back_icon_sel_ = LoadBitmap("ic_back_sel");
-<<<<<<< HEAD
-  const bool uses_switch_logo =
-      android::base::GetBoolProperty("ro.boot.dynamic_partitions", false) ||
-      android::base::GetBoolProperty("ro.fastbootd.available", false);
-  const char* chara_logo_name = uses_switch_logo ? "logo_image_switch" : "logo_image";
-  chara_logo_ = LoadBitmap(chara_logo_name);
-  if (uses_switch_logo) {
-=======
   if (android::base::GetBoolProperty("ro.boot.dynamic_partitions", false) ||
       android::base::GetBoolProperty("ro.fastbootd.available", false)) {
-    lineage_logo_ = LoadBitmap("logo_image_switch");
->>>>>>> parent of 04ae3a62 (recovery: Introduct a little uwu easter egg with uwu logo)
+    chara_logo_ = LoadBitmap("logo_image_switch");
     fastbootd_logo_ = LoadBitmap("fastbootd");
   } else {
-    lineage_logo_ = LoadBitmap("logo_image");
+    chara_logo_ = LoadBitmap("logo_image");
   }
-<<<<<<< HEAD
   const char* chara_logo_light_name =
-      uses_switch_logo ? "logo_image_switch_light" : "logo_image_light";
-  chara_logo_light_ = LoadBitmap(chara_logo_light_name);
-  if (!chara_logo_light_) {
-    chara_logo_light_ = MakeLightSurface(chara_logo_);
-  }
-  const char* chara_logo_alt_name =
-      uses_switch_logo ? "logo_image_switch_alt" : "logo_image_alt";
-  chara_logo_alt_ = LoadBitmap(chara_logo_alt_name);
-  if (!chara_logo_alt_ && uses_switch_logo) {
-    chara_logo_alt_ = LoadBitmap("logo_image_alt");
-  }
-  const char* chara_logo_alt_light_name =
-      uses_switch_logo ? "logo_image_switch_alt_light" : "logo_image_alt_light";
-  chara_logo_alt_light_ = LoadBitmap(chara_logo_alt_light_name);
-  if (!chara_logo_alt_light_ && uses_switch_logo) {
-    chara_logo_alt_light_ = LoadBitmap("logo_image_alt_light");
-  }
-  if (!chara_logo_alt_light_ && chara_logo_alt_) {
-    chara_logo_alt_light_ = MakeLightSurface(chara_logo_alt_);
-  }
-=======
-  const char* lineage_logo_light_name =
       (android::base::GetBoolProperty("ro.boot.dynamic_partitions", false) ||
        android::base::GetBoolProperty("ro.fastbootd.available", false))
           ? "logo_image_switch_light"
           : "logo_image_light";
-  lineage_logo_light_ = LoadBitmap(lineage_logo_light_name);
-  if (!lineage_logo_light_) {
-    lineage_logo_light_ = MakeLightSurface(lineage_logo_);
+  chara_logo_light_ = LoadBitmap(chara_logo_light_name);
+  if (!chara_logo_light_) {
+    chara_logo_light_ = MakeLightSurface(chara_logo_);
   }
->>>>>>> parent of 04ae3a62 (recovery: Introduct a little uwu easter egg with uwu logo)
   fastbootd_logo_light_ = LoadBitmap("fastbootd_light");
   if (!fastbootd_logo_light_) {
     fastbootd_logo_light_ = MakeLightSurface(fastbootd_logo_);
