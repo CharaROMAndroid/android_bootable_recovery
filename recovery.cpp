@@ -366,14 +366,14 @@ static InstallResult prompt_and_wipe_data(Device* device) {
   std::vector<std::string> wipe_data_menu_headers{
     "Can't load Android system. Your data may be corrupt. "
     "If you continue to get this message, you may need to "
-    "perform a factory data reset and erase all user data "
+    "perform a User data reset and erase all user data "
     "stored on this device.",
     "Reason: " + device->GetReason().value_or(""),
   };
   // clang-format off
   std::vector<std::string> wipe_data_menu_items {
     "Try again",
-    "Factory data reset",
+    "User data reset",
   };
   // clang-format on
   for (;;) {
