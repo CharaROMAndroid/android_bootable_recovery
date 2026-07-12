@@ -32,7 +32,7 @@ typedef std::pair<std::string, Device::BuiltinAction> menu_action_t;
 static std::vector<std::string> g_main_header{};
 static std::vector<menu_action_t> g_main_actions{
   { "Apply update", Device::APPLY_UPDATE },
-  { "Factory reset", Device::MENU_WIPE },
+  { "User data reset", Device::MENU_WIPE },
   { "Advanced", Device::MENU_ADVANCED },
   { "UI", Device::MENU_UI },
   { "Reboot...", Device::MENU_REBOOT },
@@ -72,7 +72,7 @@ static std::vector<menu_action_t> g_reboot_actions{
 
 static std::vector<std::string> g_wipe_header{ "Factory reset" };
 static std::vector<menu_action_t> g_wipe_actions{
-  { "Format data/factory reset", Device::WIPE_DATA },
+  { "Format data/User data reset", Device::WIPE_DATA },
   { "Format cache partition", Device::WIPE_CACHE },
   { "Format system partition", Device::WIPE_SYSTEM },
 };
