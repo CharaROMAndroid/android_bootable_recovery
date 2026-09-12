@@ -48,13 +48,22 @@ static GRSurface* gr_draw = nullptr;
 // it in ordinary memory.
 static GRSurface* gr_backend_surface = nullptr;
 static std::unique_ptr<GRSurface> gr_shadow = nullptr;
-// Framebuffer rows written since the last flip, as a half-open span; only these
-// are pushed to the backend buffer. Tracked per row because the copy is one
-// memcpy over whole rows anyway.
+// Framebuffer rows written since the last flip, as a half-open span. Tracked
+// per row because the copy is one memcpy over whole rows anyway.
 static int dirty_top = 0;
 static int dirty_bottom = 0;
-static int prev_dirty_top = 0;
-static int prev_dirty_bottom = 0;
+// Rows of the shadow that each backend buffer has not received yet. Damage is
+// kept per buffer rather than assuming a double-buffered backend, so single
+// (fbdev), double and triple buffering, and a flip that hands back no buffer,
+// are all handled the same way. A buffer that is not tracked gets a full copy.
+struct BufferDamage {
+  const GRSurface* surface;
+  int top;
+  int bottom;
+};
+static constexpr size_t kMaxTrackedBuffers = 4;
+static BufferDamage buffer_damage[kMaxTrackedBuffers] = {};
+static size_t buffer_damage_next = 0;
 static GRRotation rotation = GRRotation::NONE;
 static GRRotation touch_rotation = GRRotation::NONE;
 static PixelFormat pixel_format = PixelFormat::UNKNOWN;
@@ -194,7 +203,10 @@ static uint32_t* PixelAt(GRSurface* surface, int x, int y, int row_pixels) {
     case GRRotation::NONE:
       return reinterpret_cast<uint32_t*>(surface->data()) + y * row_pixels + x;
     case GRRotation::RIGHT:
-      return reinterpret_cast<uint32_t*>(surface->data()) + x * row_pixels + (surface->width - y);
+      // y == 0 is the last column. Without the -1 it lands one past the row,
+      // spilling into the next row and, for the bottom row, past the buffer.
+      return reinterpret_cast<uint32_t*>(surface->data()) + x * row_pixels +
+             (surface->width - 1 - y);
     case GRRotation::DOWN:
       return reinterpret_cast<uint32_t*>(surface->data()) + (surface->height - 1 - y) * row_pixels +
              (surface->width - 1 - x);
@@ -240,6 +252,58 @@ static void MarkDirty(int x1, int y1, int x2, int y2) {
       MarkDirtyRows(h - x2, h - x1);
       break;
   }
+}
+
+static void ResetBufferDamage() {
+  for (auto& d : buffer_damage) d = {};
+  buffer_damage_next = 0;
+}
+
+static bool SameGeometry(const GRSurface* a, const GRSurface* b) {
+  return a->width == b->width && a->height == b->height && a->row_bytes == b->row_bytes &&
+         a->pixel_bytes == b->pixel_bytes;
+}
+
+// (Re)creates the shadow to match the backend buffer. Returns false, leaving
+// no shadow, if it cannot be allocated.
+static bool CreateShadow(const GRSurface* backend) {
+  gr_shadow = GRSurface::Create(backend->width, backend->height, backend->row_bytes,
+                                backend->pixel_bytes);
+  ResetBufferDamage();
+  dirty_top = dirty_bottom = 0;
+  if (!gr_shadow) return false;
+  memset(gr_shadow->data(), 0, gr_shadow->height * gr_shadow->row_bytes);
+  return true;
+}
+
+// Copies into `target` every shadow row it has not received yet.
+static void SyncBackendSurface(GRSurface* target) {
+  BufferDamage* entry = nullptr;
+  for (auto& d : buffer_damage) {
+    if (d.surface == target) {
+      entry = &d;
+      break;
+    }
+  }
+
+  int top = 0;
+  int bottom = gr_shadow->height;  // Unknown buffer: copy everything.
+  if (entry) {
+    top = entry->top;
+    bottom = entry->bottom;
+  } else {
+    // Evicting an entry only means that buffer gets a full copy next time.
+    entry = &buffer_damage[buffer_damage_next];
+    buffer_damage_next = (buffer_damage_next + 1) % kMaxTrackedBuffers;
+    entry->surface = target;
+  }
+
+  if (bottom > top) {
+    size_t offset = static_cast<size_t>(top) * gr_shadow->row_bytes;
+    memcpy(target->data() + offset, gr_shadow->data() + offset,
+           static_cast<size_t>(bottom - top) * gr_shadow->row_bytes);
+  }
+  entry->top = entry->bottom = 0;
 }
 
 static void TextBlend(const uint8_t* src_p, int src_row_bytes, uint32_t* dst_p, int dst_row_pixels,
@@ -365,6 +429,9 @@ void gr_fill(int x1, int y1, int x2, int y2) {
 
   const bool opaque = alpha == 255;
 
+  // Marked up front so the fast path's early return cannot skip it.
+  MarkDirty(x1, y1, x2, y2);
+
   if (opaque && rotation == GRRotation::NONE) {
     const int width = x2 - x1;
     for (int y = y1; y < y2; ++y) {
@@ -472,40 +539,44 @@ void gr_flip() {
     return;
   }
 
-  // The buffer about to be filled was last written two flips ago, so it needs
-  // the previous frame's damage as well as this one's.
-  int top = dirty_top;
-  int bottom = dirty_bottom;
-  if (prev_dirty_bottom > prev_dirty_top) {
-    if (bottom <= top) {
-      top = prev_dirty_top;
-      bottom = prev_dirty_bottom;
-    } else {
-      if (prev_dirty_top < top) top = prev_dirty_top;
-      if (prev_dirty_bottom > bottom) bottom = prev_dirty_bottom;
+  // Every tracked buffer is now missing this frame's damage as well.
+  if (dirty_bottom > dirty_top) {
+    for (auto& d : buffer_damage) {
+      if (!d.surface) continue;
+      if (d.bottom <= d.top) {
+        d.top = dirty_top;
+        d.bottom = dirty_bottom;
+      } else {
+        if (dirty_top < d.top) d.top = dirty_top;
+        if (dirty_bottom > d.bottom) d.bottom = dirty_bottom;
+      }
     }
   }
+  dirty_top = dirty_bottom = 0;
 
-  if (gr_backend_surface) {
-    if (bottom > top) {
-      size_t offset = static_cast<size_t>(top) * gr_shadow->row_bytes;
-      memcpy(gr_backend_surface->data() + offset, gr_shadow->data() + offset,
-             static_cast<size_t>(bottom - top) * gr_shadow->row_bytes);
+  // With no buffer to copy into (the last flip failed), nothing is lost: the
+  // damage stays recorded against each buffer until it is next handed back.
+  if (gr_backend_surface) SyncBackendSurface(gr_backend_surface);
+
+  GRSurface* next = gr_backend->Flip();
+
+  // Multi-connector backends can hand back a buffer for another display, which
+  // may differ in size or stride; copying the old shadow into it would
+  // overrun. Rebuild the shadow to match, or draw directly if that fails.
+  if (next && !SameGeometry(next, gr_shadow.get())) {
+    if (CreateShadow(next)) {
+      gr_draw = gr_shadow.get();
+    } else {
+      printf("gr_flip: failed to reallocate shadow framebuffer, drawing into the backend buffer\n");
+      gr_draw = next;
+      gr_backend_surface = nullptr;
+      return;
     }
-    prev_dirty_top = dirty_top;
-    prev_dirty_bottom = dirty_bottom;
-    dirty_top = dirty_bottom = 0;
-  } else {
-    // No buffer was handed back to copy into. Which one comes back is unknown,
-    // and this frame's damage would be dropped two flips from now, so resync
-    // both buffers in full once a flip succeeds again.
-    dirty_top = prev_dirty_top = 0;
-    dirty_bottom = prev_dirty_bottom = gr_shadow->height;
   }
 
   // gr_draw stays pointing at the shadow: a failed flip costs a frame rather
   // than a null dereference on the next draw, and a later flip recovers.
-  gr_backend_surface = gr_backend->Flip();
+  gr_backend_surface = next;
 }
 
 std::unique_ptr<MinuiBackend> create_backend(GraphicsBackend backend) {
@@ -582,16 +653,11 @@ int gr_init(std::initializer_list<GraphicsBackend> backends) {
   // Compose into ordinary memory instead of straight into the backend buffer.
   // That buffer is DMA memory mapped write-combine, and every blend reads the
   // destination back; an uncached read costs far more than the linear copy this
-  // adds per flip, and the cost scales with screen area.
+  // adds per flip, and the cost scales with screen area. No backend buffer is
+  // tracked yet, so each gets a full copy the first time it comes back.
   gr_backend_surface = gr_draw;
-  gr_shadow = GRSurface::Create(gr_draw->width, gr_draw->height, gr_draw->row_bytes,
-                                gr_draw->pixel_bytes);
-  if (gr_shadow) {
-    memset(gr_shadow->data(), 0, gr_shadow->height * gr_shadow->row_bytes);
+  if (CreateShadow(gr_draw)) {
     gr_draw = gr_shadow.get();
-    // Both backend buffers still hold whatever was on screen at handover.
-    dirty_top = prev_dirty_top = 0;
-    dirty_bottom = prev_dirty_bottom = gr_shadow->height;
   } else {
     printf("gr_init: failed to allocate shadow framebuffer, drawing into the backend buffer\n");
     gr_backend_surface = nullptr;
@@ -651,7 +717,8 @@ void gr_exit() {
   gr_shadow.reset();
   gr_backend_surface = nullptr;
   gr_draw = nullptr;
-  dirty_top = dirty_bottom = prev_dirty_top = prev_dirty_bottom = 0;
+  dirty_top = dirty_bottom = 0;
+  ResetBufferDamage();
 
   delete gr_font;
   gr_font = nullptr;
