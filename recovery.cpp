@@ -143,7 +143,7 @@ static constexpr size_t kMaxKlogReadBytes = 2 * 1024 * 1024;
  */
 
 static bool IsRoDebuggable() {
-  return true;
+  return IsRecoveryDebugAllowed();
 }
 
 // Clear the recovery command and prepare to boot a (hopefully working) system,
@@ -198,6 +198,10 @@ bool ask_to_ab_reboot(Device* device) {
 }
 
 bool ask_to_continue_unverified(Device* device) {
+  if (!IsBootloaderUnlocked()) {
+    device->GetUI()->Print("Signature verification failed. Unlock the bootloader to install unsigned packages.\n");
+    return false;
+  }
   device->GetUI()->SetProgressType(RecoveryUI::EMPTY);
   return yes_no(device, "Signature verification failed", "Install anyway?");
 }
@@ -219,6 +223,10 @@ std::string get_chosen_slot(Device* device) {
 }
 
 int set_slot(Device* device) {
+  if (!IsBootloaderUnlocked()) {
+    device->GetUI()->Print("Switching slots requires an unlocked bootloader.\n");
+    return 1;
+  }
   std::string slot = get_chosen_slot(device);
   CommandResult ret;
   auto cb = [&ret](CommandResult result) { ret = result; };
@@ -745,6 +753,10 @@ change_menu:
       }
 
       case Device::ENABLE_ADB:
+        if (!IsBootloaderUnlocked()) {
+          ui->Print("Enabling ADB requires an unlocked bootloader.\n");
+          break;
+        }
         android::base::SetProperty("ro.adb.secure.recovery", "0");
         android::base::SetProperty("ctl.restart", "adbd");
         device->RemoveMenuItemForAction(Device::ENABLE_ADB);

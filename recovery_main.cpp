@@ -70,11 +70,11 @@ static constexpr const char* LOCALE_FILE = "/cache/recovery/last_locale";
 static RecoveryUI* ui = nullptr;
 
 static bool IsRoDebuggable() {
-  return true;
+  return IsRecoveryDebugAllowed();
 }
 
 static bool IsDeviceUnlocked() {
-  return "orange" == android::base::GetProperty("ro.boot.verifiedbootstate", "");
+  return IsBootloaderUnlocked();
 }
 
 std::string get_build_type() {
@@ -502,8 +502,12 @@ int main(int argc, char** argv) {
     device->RemoveMenuItemForAction(Device::MOUNT_SYSTEM);
   }
   
-  if (!android::base::GetBoolProperty("ro.build.ab_update", false)) {
+  if (!android::base::GetBoolProperty("ro.build.ab_update", false) || !IsBootloaderUnlocked()) {
     device->RemoveMenuItemForAction(Device::SWAP_SLOT);
+  }
+
+  if (!IsBootloaderUnlocked()) {
+    device->RemoveMenuItemForAction(Device::ENABLE_ADB);
   }
 
   ui->SetBackground(RecoveryUI::NONE);

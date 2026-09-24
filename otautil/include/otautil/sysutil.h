@@ -22,7 +22,29 @@
 #include <string_view>
 #include <vector>
 
+#include <android-base/properties.h>
+
 #include "rangeset.h"
+
+// Returns true only if the bootloader positively reports being unlocked.
+// Fails closed: an unknown or missing state is treated as locked.
+inline bool IsBootloaderUnlocked() {
+  const std::string device_state =
+      android::base::GetProperty("ro.boot.vbmeta.device_state", "");
+  if (device_state == "unlocked") return true;
+  if (device_state == "locked") return false;
+
+  const std::string flash_locked = android::base::GetProperty("ro.boot.flash.locked", "");
+  if (flash_locked == "0") return true;
+  if (flash_locked == "1") return false;
+
+  return android::base::GetProperty("ro.boot.verifiedbootstate", "") == "orange";
+}
+
+// Debug features are allowed on debuggable builds or unlocked bootloaders.
+inline bool IsRecoveryDebugAllowed() {
+  return android::base::GetBoolProperty("ro.debuggable", false) || IsBootloaderUnlocked();
+}
 
 // This class holds the content of a block map file.
 class BlockMapData {
