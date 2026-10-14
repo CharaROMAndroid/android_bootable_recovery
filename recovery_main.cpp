@@ -501,7 +501,7 @@ int main(int argc, char** argv) {
     device->RemoveMenuItemForAction(Device::WIPE_SYSTEM);
     device->RemoveMenuItemForAction(Device::MOUNT_SYSTEM);
   }
-  
+
   if (!android::base::GetBoolProperty("ro.build.ab_update", false) || !IsBootloaderUnlocked()) {
     device->RemoveMenuItemForAction(Device::SWAP_SLOT);
   }
