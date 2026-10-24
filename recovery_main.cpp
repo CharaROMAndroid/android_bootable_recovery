@@ -53,6 +53,7 @@
 #include "fastboot/fastboot.h"
 #include "install/wipe_data.h"
 #include "otautil/boot_state.h"
+#include "otautil/duress.h"
 #include "otautil/paths.h"
 #include "otautil/sysutil.h"
 #include "recovery.h"
@@ -461,7 +462,11 @@ int main(int argc, char** argv) {
     device = (*make_device_func)();
   }
 
-  if (android::base::GetBoolProperty("ro.boot.quiescent", false)) {
+  if (IsDuressWipe(args)) {
+    // Select the existing no-display UI before Init can draw anything. Console
+    // logging, wipe behavior, and ordinary recovery error/menu UI are unchanged.
+    device->ResetUI(new StubRecoveryUI());
+  } else if (android::base::GetBoolProperty("ro.boot.quiescent", false)) {
     printf("Quiescent recovery mode.\n");
     device->ResetUI(new StubRecoveryUI());
   } else {
