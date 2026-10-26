@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <memory>
 
 #include <android-base/properties.h>
@@ -352,22 +353,37 @@ void gr_fill(int x1, int y1, int x2, int y2) {
   x2 += overscan_offset_x;
   y2 += overscan_offset_y;
 
+  if (x2 <= x1 || y2 <= y1) return;
+
   if (outside(x1, y1) || outside(x2 - 1, y2 - 1)) return;
 
   int row_pixels = gr_draw->row_bytes / gr_draw->pixel_bytes;
   uint32_t* p = PixelAt(gr_draw, x1, y1, row_pixels);
   uint8_t alpha = get_alpha(gr_current);
-  if (alpha > 0) {
+
+  if (alpha == 0) return;
+
+  const bool opaque = alpha == 255;
+
+  if (opaque && rotation == GRRotation::NONE) {
+    const int width = x2 - x1;
     for (int y = y1; y < y2; ++y) {
-      uint32_t* px = p;
-      for (int x = x1; x < x2; ++x) {
-        *px = (alpha == 255) ? gr_current : pixel_blend(alpha, *px);
-        incr_x(&px, row_pixels);
-      }
-      incr_y(&p, row_pixels);
+      std::fill_n(p, width, gr_current);
+      p += row_pixels;
     }
     MarkDirty(x1, y1, x2, y2);
+    return;
   }
+
+  for (int y = y1; y < y2; ++y) {
+    uint32_t* px = p;
+    for (int x = x1; x < x2; ++x) {
+      *px = opaque ? gr_current : pixel_blend(alpha, *px);
+      incr_x(&px, row_pixels);
+    }
+    incr_y(&p, row_pixels);
+  }
+  MarkDirty(x1, y1, x2, y2);
 }
 
 void gr_blit(const GRSurface* source, int sx, int sy, int w, int h, int dx, int dy) {
